@@ -27,6 +27,7 @@ export class SettingsUI {
   private onConfigChange: (config: ExtensionConfig) => void;
   private playlistManager: PlaylistManager;
   private settingsModal: HTMLElement | null = null;
+  private currentPlaylists: PlaylistInfo[] = [];
 
   constructor(config: ExtensionConfig, onConfigChange: (config: ExtensionConfig) => void) {
     this.config = { ...config };
@@ -162,31 +163,21 @@ export class SettingsUI {
   private createButton(): HTMLButtonElement {
     const button = document.createElement('button');
     button.innerText = 'HK';
-    button.className = 'playlist-hotkeys-settings-btn';
+    button.className = 'Button-buttonTertiary-textBrightAccent-small-iconOnly-useBrowserDefaultFocusStyle-condensed playlist-hotkeys-settings-btn';
     button.title = 'Configure Playlist Hotkeys';
     button.style.cssText = `
-      background: #1ed760 !important;
-      color: black !important;
-      border: none !important;
-      padding: 8px 12px !important;
-      border-radius: 4px !important;
-      cursor: pointer !important;
-      font-size: 12px !important;
+      min-inline-size: 24px !important;
+      min-block-size: 24px !important;
+      padding-inline: 6px !important;
+      padding-block: 4px !important;
+      font-size: 9px !important;
       font-weight: bold !important;
-      margin: 0 0 0 8px !important;
-      display: inline-block !important;
+      margin-inline-start: 6px !important;
+      background-color: transparent !important;
+      color: var(--text-bright-accent, #107434) !important;
     `;
     
-    button.addEventListener('mouseenter', () => {
-      button.style.background = '#1db954 !important';
-    });
-    
-    button.addEventListener('mouseleave', () => {
-      button.style.background = '#1ed760 !important';
-    });
-    
     button.addEventListener('click', () => {
-      console.log('Hotkey button clicked');
       this.openSettings();
     });
     
@@ -204,6 +195,7 @@ export class SettingsUI {
     try {
       console.log('Calling playlistManager.getUserPlaylists()...');
       const playlists = await this.playlistManager.getUserPlaylists();
+      this.currentPlaylists = playlists;
       console.log(`Settings UI received ${playlists.length} playlists:`, playlists);
       
       if (playlists.length === 0) {
@@ -362,10 +354,12 @@ export class SettingsUI {
                   style="padding: 8px 12px; background: var(--spice-main); color: var(--spice-text); border: 1px solid var(--spice-button); border-radius: 4px; cursor: pointer; min-width: 120px; text-align: left;">
             ${mapping.combo || 'Click to set hotkey...'}
           </button>
-          <select class="playlist-select" style="padding: 4px 8px; background: var(--spice-main); color: var(--spice-text); border: 1px solid var(--spice-button); border-radius: 4px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">
-            <option value="">Add playlist...</option>
-            ${playlists.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
-          </select>
+          <div class="playlist-search-container" style="position: relative; max-width: 200px;">
+            <input class="playlist-search" 
+                   type="text" 
+                   placeholder="Search playlists..." 
+                   style="padding: 4px 8px; background: var(--spice-main); color: var(--spice-text); border: 1px solid var(--spice-button); border-radius: 4px; width: 100%;">
+          </div>
           <button class="remove-mapping" style="padding: 4px 8px; background: var(--spice-notification-error); color: white; border: none; border-radius: 4px; cursor: pointer;">Remove</button>
         </div>
         <div class="selected-playlists" style="display: flex; flex-wrap: wrap; gap: 4px;">
@@ -412,15 +406,38 @@ export class SettingsUI {
       if (target.classList.contains('combo-capture')) {
         this.startHotkeyCapture(target as HTMLButtonElement);
       }
-    });
-
-    this.settingsModal.addEventListener('change', (e) => {
-      const target = e.target as HTMLSelectElement;
       
-      if (target.classList.contains('playlist-select') && target.value) {
-        this.addPlaylistToMapping(target);
+      if (target.classList.contains('playlist-option')) {
+        this.selectPlaylistFromSearch(target);
       }
     });
+
+    this.settingsModal.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      
+      if (target.classList.contains('playlist-search')) {
+        this.handlePlaylistSearch(target);
+      }
+    });
+
+    this.settingsModal.addEventListener('focus', (e) => {
+      const target = e.target as HTMLInputElement;
+      
+      if (target.classList.contains('playlist-search')) {
+        this.showPlaylistDropdown(target);
+      }
+    }, true);
+
+    this.settingsModal.addEventListener('blur', (e) => {
+      const target = e.target as HTMLInputElement;
+      
+      if (target.classList.contains('playlist-search')) {
+        // Delay hiding to allow clicking on options
+        setTimeout(() => {
+          this.hidePlaylistDropdown();
+        }, 200);
+      }
+    }, true);
   }
 
   private addPlaylistToMapping(selectElement: HTMLSelectElement): void {
@@ -454,6 +471,72 @@ export class SettingsUI {
     selectElement.value = '';
   }
 
+  private handlePlaylistSearch(input: HTMLInputElement): void {
+    const searchTerm = input.value.toLowerCase();
+    const dropdown = document.querySelector('.active-playlist-dropdown') as HTMLElement;
+    
+    if (!dropdown) return;
+    
+    const options = dropdown.querySelectorAll('.playlist-option');
+    let visibleCount = 0;
+    
+    options.forEach(option => {
+      const optionElement = option as HTMLElement;
+      const playlistName = optionElement.textContent?.toLowerCase() || '';
+      
+      if (playlistName.includes(searchTerm)) {
+        optionElement.style.display = 'block';
+        visibleCount++;
+      } else {
+        optionElement.style.display = 'none';
+      }
+    });
+    
+    // Show dropdown if there are visible options OR no search term (show all)
+    dropdown.style.display = (visibleCount > 0 || searchTerm.length === 0) ? 'block' : 'none';
+  }
+
+  private selectPlaylistFromSearch(optionElement: HTMLElement): void {
+    const playlistId = optionElement.dataset.id;
+    const playlistName = optionElement.textContent || '';
+    
+    if (!playlistId) return;
+
+    const activeInput = document.querySelector('.active-search-input') as HTMLInputElement;
+    if (!activeInput) return;
+
+    const mappingItem = activeInput.closest('.mapping-item');
+    const selectedContainer = mappingItem?.querySelector('.selected-playlists');
+
+    if (selectedContainer) {
+      const existing = selectedContainer.querySelector(`[data-id="${playlistId}"]`);
+      if (existing) {
+        return;
+      }
+
+      const tag = document.createElement('span');
+      tag.className = 'playlist-tag';
+      tag.dataset.id = playlistId;
+      tag.textContent = `${playlistName} ×`;
+      tag.style.cssText = `
+        display: inline-block;
+        padding: 2px 6px;
+        background: var(--spice-button);
+        color: var(--spice-main);
+        border-radius: 12px;
+        font-size: 11px;
+        cursor: pointer;
+        margin-right: 4px;
+      `;
+      
+      selectedContainer.appendChild(tag);
+    }
+
+    // Clear search and hide dropdown
+    activeInput.value = '';
+    this.hidePlaylistDropdown();
+  }
+
   private addNewMapping(playlists: PlaylistInfo[]): void {
     const container = this.settingsModal?.querySelector('#mappings-container');
     if (!container) return;
@@ -478,16 +561,22 @@ export class SettingsUI {
     const mappings: HotkeyMapping[] = [];
 
     const mappingItems = this.settingsModal?.querySelectorAll('.mapping-item');
-    mappingItems?.forEach(item => {
+    console.log('Found mapping items:', mappingItems?.length);
+    
+    mappingItems?.forEach((item, index) => {
       const comboButton = item.querySelector('.combo-capture') as HTMLButtonElement;
       const combo = comboButton?.getAttribute('data-combo')?.trim() || '';
       const playlistTags = item.querySelectorAll('.playlist-tag');
       const playlistIds = Array.from(playlistTags).map(tag => tag.getAttribute('data-id')!).filter(Boolean);
 
+      console.log(`Mapping ${index}: combo="${combo}", playlists=[${playlistIds.join(',')}]`);
+
       if (combo && playlistIds.length > 0) {
         mappings.push({ combo, playlistIds });
       }
     });
+
+    console.log('Final mappings to save:', mappings);
 
     const newConfig: ExtensionConfig = {
       globalMode,
@@ -529,7 +618,9 @@ export class SettingsUI {
     };
     
     const handleBlur = () => {
-      button.textContent = originalText || 'Click to set hotkey...';
+      // Check if we have a saved combo, otherwise use default text
+      const savedCombo = button.getAttribute('data-combo');
+      button.textContent = savedCombo || 'Click to set hotkey...';
       button.style.background = 'var(--spice-main)';
       document.removeEventListener('keydown', handleKeydown, true);
       document.removeEventListener('click', handleClickOutside, true);
@@ -576,5 +667,73 @@ export class SettingsUI {
     };
     
     return keyMap[key] || key;
+  }
+
+  private showPlaylistDropdown(input: HTMLInputElement): void {
+    // Clean up any existing dropdown
+    this.hidePlaylistDropdown();
+    
+    // Mark this input as active
+    document.querySelectorAll('.active-search-input').forEach(el => el.classList.remove('active-search-input'));
+    input.classList.add('active-search-input');
+    
+    // Use stored playlists
+    const playlists = this.currentPlaylists;
+    
+    if (!playlists || playlists.length === 0) {
+      return;
+    }
+    
+    // Get input position
+    const rect = input.getBoundingClientRect();
+    
+    // Create dropdown attached to body
+    const dropdown = document.createElement('div');
+    dropdown.className = 'active-playlist-dropdown';
+    dropdown.style.cssText = `
+      position: fixed;
+      top: ${rect.bottom}px;
+      left: ${rect.left}px;
+      width: ${rect.width}px;
+      background: var(--spice-card);
+      border: 1px solid var(--spice-button);
+      border-top: none;
+      border-radius: 0 0 4px 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 999999;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    `;
+    
+    // Add playlist options
+    playlists.forEach((p: PlaylistInfo) => {
+      const option = document.createElement('div');
+      option.className = 'playlist-option';
+      option.dataset.id = p.id;
+      option.textContent = p.name;
+      option.style.cssText = `
+        padding: 8px;
+        cursor: pointer;
+        border-bottom: 1px solid var(--spice-highlight);
+      `;
+      
+      // Add click handler directly since it's attached to body
+      option.addEventListener('click', () => {
+        this.selectPlaylistFromSearch(option);
+      });
+      
+      dropdown.appendChild(option);
+    });
+    
+    document.body.appendChild(dropdown);
+  }
+
+  private hidePlaylistDropdown(): void {
+    const dropdown = document.querySelector('.active-playlist-dropdown');
+    if (dropdown) {
+      dropdown.remove();
+    }
+    
+    document.querySelectorAll('.active-search-input').forEach(el => el.classList.remove('active-search-input'));
   }
 }
