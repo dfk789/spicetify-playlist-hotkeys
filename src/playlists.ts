@@ -24,12 +24,9 @@ export class PlaylistManager {
     }
 
     // First, add to liked songs
-    console.log('💚 Adding track to liked songs first...');
     try {
       await this.addToLikedSongs(trackUri);
-      console.log('✅ Successfully added to liked songs');
     } catch (error) {
-      console.warn('⚠️ Failed to add to liked songs (might already be liked):', error);
       // Don't throw error here - continue with playlists even if like fails
     }
 
@@ -40,15 +37,10 @@ export class PlaylistManager {
     const failures = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[];
     const successes = results.filter(result => result.status === 'fulfilled');
     
-    console.log(`📊 Playlist results: ${successes.length} successful, ${failures.length} failed`);
-    
     // Only throw error if ALL playlists failed
     if (failures.length > 0 && successes.length === 0) {
       const errorMessages = failures.map(f => f.reason?.message || 'Unknown error').join(', ');
       throw new Error(`Failed to add to all ${failures.length} playlist(s): ${errorMessages}`);
-    } else if (failures.length > 0) {
-      // Log warnings for partial failures but don't throw
-      console.warn(`⚠️ Failed to add to ${failures.length} playlist(s), but ${successes.length} succeeded`);
     }
   }
 
@@ -59,7 +51,6 @@ export class PlaylistManager {
     try {
       // Check if track is already in playlist to avoid duplicates
       if (await this.isTrackInPlaylist(trackUri, playlistId)) {
-        console.log(`Track ${trackUri} already in playlist ${playlistId}, skipping`);
         return;
       }
 
@@ -70,11 +61,9 @@ export class PlaylistManager {
     } catch (error: any) {
       // Handle 403 Forbidden errors (read-only playlists)
       if (error.status === 403 || error.message?.includes('403') || error.message?.includes('Forbidden')) {
-        console.warn(`⚠️ Cannot add to playlist ${playlistId} (read-only or no permission)`);
         throw new Error(`Playlist is read-only or you don't have permission to add tracks`);
       }
       
-      console.error(`Failed to add track to playlist ${playlistId}:`, error);
       throw new Error(`Failed to add to playlist ${playlistId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -92,7 +81,6 @@ export class PlaylistManager {
       // Check if already liked to avoid unnecessary API calls
       const isLiked = await this.isTrackLiked(trackUri);
       if (isLiked) {
-        console.log('💚 Track already in liked songs, skipping');
         return;
       }
 
@@ -101,7 +89,6 @@ export class PlaylistManager {
         { ids: [trackId] }
       );
     } catch (error) {
-      console.error('Failed to add track to liked songs:', error);
       throw new Error(`Failed to like track: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -120,7 +107,6 @@ export class PlaylistManager {
 
       return response && Array.isArray(response) && response[0] === true;
     } catch (error) {
-      console.warn('Failed to check if track is liked:', error);
       return false;
     }
   }
@@ -145,7 +131,6 @@ export class PlaylistManager {
 
       return response.items.some((item: any) => item.track?.uri === trackUri);
     } catch (error) {
-      console.warn(`Failed to check if track is in playlist ${playlistId}:`, error);
       return false;
     }
   }
@@ -156,7 +141,6 @@ export class PlaylistManager {
   async getUserPlaylists(): Promise<PlaylistInfo[]> {
     const now = Date.now();
     if (this.playlistCache.size > 0 && (now - this.lastCacheUpdate) < this.cacheExpiry) {
-      console.log(`🔄 Returning ${this.playlistCache.size} cached playlists`);
       return Array.from(this.playlistCache.values());
     }
 
@@ -164,9 +148,7 @@ export class PlaylistManager {
     let currentUser;
     try {
       currentUser = await this.getCurrentUser();
-      console.log(`👤 Current user info:`, currentUser);
     } catch (error) {
-      console.warn(`⚠️ Could not get current user info, will include all playlists:`, error);
       currentUser = null;
     }
 
@@ -179,41 +161,24 @@ export class PlaylistManager {
 
     for (const endpoint of endpoints) {
       try {
-        console.log(`🔍 Attempting to fetch playlists from: ${endpoint.url}`);
-        console.log('📡 Spicetify.CosmosAsync available:', !!Spicetify?.CosmosAsync);
-        
         let allPlaylists: PlaylistInfo[] = [];
 
         if (endpoint.type === 'webapi') {
-          // For Web API, fetch all pages
           allPlaylists = await this.fetchAllPlaylistPages();
         } else {
-          // For other endpoints, use single request
           const response = await Spicetify.CosmosAsync.get(endpoint.url);
-          console.log(`✅ Request completed for: ${endpoint.url}`);
-          
           if (!response) {
-            console.log(`❌ No response from ${endpoint.url}, trying next endpoint...`);
             continue;
           }
-
           allPlaylists = this.parsePlaylistResponse(response, endpoint);
         }
-        
-        // Log ALL playlist objects for debugging
-        console.log(`📋 RAW PLAYLIST OBJECTS (${allPlaylists.length} total):`, allPlaylists);
-        console.log(`👤 CURRENT USER OBJECT:`, currentUser);
         
         // Filter to only user-owned playlists
         const userPlaylists = allPlaylists.filter(playlist => {
           return this.isUserOwnedPlaylist(playlist, currentUser);
         });
         
-        console.log(`🎯 Filtered to ${userPlaylists.length} user-owned playlists (from ${allPlaylists.length} total)`);
-        
         if (userPlaylists.length > 0) {
-          console.log(`🎉 Successfully loaded ${userPlaylists.length} user playlists from ${endpoint.url}`);
-          
           // Update cache
           this.playlistCache.clear();
           userPlaylists.forEach(playlist => {
@@ -222,25 +187,16 @@ export class PlaylistManager {
           this.lastCacheUpdate = now;
           
           return userPlaylists;
-        } else {
-          console.log(`⚠️ No user playlists found with ${endpoint.url}, trying next endpoint...`);
         }
         
       } catch (error) {
-        console.error(`❌ Failed to fetch playlists from ${endpoint.url}:`, error);
-        console.error('📊 Error details:', {
-          name: error instanceof Error ? error.name : 'Unknown',
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack?.substring(0, 200) + '...' : undefined
-        });
         continue; // Try next endpoint
       }
     }
     
     // If all endpoints failed
-    console.error('💥 All playlist endpoints failed');
     this.clearCache();
-    throw new Error('Failed to fetch playlists from all available endpoints. Check browser console for detailed error information.');
+    throw new Error('Failed to fetch playlists from all available endpoints.');
   }
 
   /**
@@ -252,42 +208,32 @@ export class PlaylistManager {
     
     while (url) {
       try {
-        console.log(`📄 Fetching playlist page: ${url}`);
         const response = await Spicetify.CosmosAsync.get(url);
         
         if (!response || !response.items) {
-          console.log('❌ No response or items in page');
           break;
         }
         
-        console.log(`📋 Got ${response.items.length} playlists from this page`);
-        
         // Parse this page's playlists
-        const pagePlaylistsRaw = response.items.map((item: any) => {
-          console.log('🔍 RAW PLAYLIST ITEM FROM API:', JSON.stringify(item, null, 2));
-          return {
-            type: 'playlist',
-            uri: item.uri,
-            name: item.name,
-            id: item.id,
-            owner: item.owner
-          };
-        });
+        const pagePlaylistsRaw = response.items.map((item: any) => ({
+          type: 'playlist',
+          uri: item.uri,
+          name: item.name,
+          id: item.id,
+          owner: item.owner
+        }));
         
         const pagePlaylists = this.parsePlaylistResponse({ items: pagePlaylistsRaw }, { url, type: 'webapi' });
         allPlaylists.push(...pagePlaylists);
         
         // Get next page URL
         url = response.next;
-        console.log(`🔗 Next page URL: ${url || 'None (last page)'}`);
         
       } catch (error) {
-        console.error('❌ Failed to fetch playlist page:', error);
         break;
       }
     }
     
-    console.log(`📚 Total playlists fetched across all pages: ${allPlaylists.length}`);
     return allPlaylists;
   }
 
@@ -297,10 +243,8 @@ export class PlaylistManager {
   private async getCurrentUser(): Promise<any> {
     try {
       const response = await Spicetify.CosmosAsync.get('https://api.spotify.com/v1/me');
-      console.log('🔍 FULL USER DATA FROM API:', JSON.stringify(response, null, 2));
       return response;
     } catch (error) {
-      console.error('Failed to get current user info:', error);
       return null;
     }
   }
@@ -311,13 +255,11 @@ export class PlaylistManager {
   private isUserOwnedPlaylist(playlist: PlaylistInfo, currentUser: any): boolean {
     // If playlist owner is marked as 'self', it's user-owned
     if (playlist.owner === 'self') {
-      console.log(`🔍 "${playlist.name}" marked as self-owned - KEEP`);
       return true;
     }
     
     // If playlist is marked as 'not-owned', reject it
     if (playlist.owner === 'not-owned') {
-      console.log(`🔍 "${playlist.name}" marked as not-owned - REJECT`);
       return false;
     }
     
@@ -343,7 +285,6 @@ export class PlaylistManager {
       userId && (userId === playlistOwner || userId.toLowerCase() === playlistOwner.toLowerCase())
     );
     
-    console.log(`🔍 "${playlist.name}" owned by "${playlistOwner}" - User owned: ${isOwned}`);
     return isOwned;
   }
 
@@ -356,20 +297,14 @@ export class PlaylistManager {
     if (endpoint.type === 'rootlist') {
       // Handle sp:// and wg:// rootlist format
       if (response.rows && Array.isArray(response.rows)) {
-        console.log(`📝 Found ${response.rows.length} total items in rootlist`);
-        
         // Function to recursively extract playlists from folders
         const extractPlaylistsRecursively = (items: any[]): any[] => {
           const playlists: any[] = [];
           
           for (const item of items) {
-            console.log(`🔍 Checking item type: ${item.type}, name: ${item.name}`);
-            
             if (item.type === 'playlist') {
-              console.log(`🎵 Found playlist: ${item.name}`);
               playlists.push(item);
             } else if (item.type === 'folder' && item.rows && Array.isArray(item.rows)) {
-              console.log(`📁 Found folder: ${item.name} with ${item.rows.length} items`);
               // Recursively search folder contents
               const folderPlaylists = extractPlaylistsRecursively(item.rows);
               playlists.push(...folderPlaylists);
@@ -380,7 +315,6 @@ export class PlaylistManager {
         };
         
         const allPlaylists = extractPlaylistsRecursively(response.rows);
-        console.log(`🎯 Total playlists found (including in folders): ${allPlaylists.length}`);
         
         playlistItems = allPlaylists.map((row: any) => {
           // Extract URI - try multiple fields
@@ -403,36 +337,21 @@ export class PlaylistManager {
           };
         });
       } else {
-        console.log(`⚠️ Invalid rootlist structure:`, response);
         return [];
       }
     } else if (endpoint.type === 'webapi') {
       // Handle Spotify Web API format
       if (response.items && Array.isArray(response.items)) {
-        console.log(`📝 Found ${response.items.length} playlists from Web API`);
-        playlistItems = response.items.map((item: any) => {
-          console.log('🎵 Web API playlist item:', {
-            id: item.id,
-            name: item.name,
-            uri: item.uri,
-            owner: item.owner?.display_name,
-            public: item.public,
-            allKeys: Object.keys(item || {})
-          });
-          return {
-            type: 'playlist',
-            uri: item.uri,
-            name: item.name,
-            id: item.id
-          };
-        });
+        playlistItems = response.items.map((item: any) => ({
+          type: 'playlist',
+          uri: item.uri,
+          name: item.name,
+          id: item.id
+        }));
       } else {
-        console.log(`⚠️ Invalid Web API structure:`, response);
         return [];
       }
     }
-
-    console.log(`🎯 Found ${playlistItems.length} playlist items after filtering`);
 
     const playlists: PlaylistInfo[] = playlistItems
       .map((row: any) => {
@@ -441,12 +360,10 @@ export class PlaylistManager {
         
         // Extract owner information - try multiple possible formats
         let owner = '';
-        let isUserOwned = false;
         
         // Check if this is a rootlist item with ownedBySelf field
         if (row.ownedBySelf !== undefined) {
-          isUserOwned = row.ownedBySelf;
-          if (isUserOwned) {
+          if (row.ownedBySelf) {
             owner = 'self'; // Mark as self-owned
           } else {
             owner = 'not-owned'; // Mark as not owned by user
@@ -462,8 +379,6 @@ export class PlaylistManager {
           }
         }
         
-        console.log(`🔧 Processing: "${name}" - Owner: "${owner}" - OwnedBySelf: ${row.ownedBySelf}`);
-        
         return {
           id,
           name,
@@ -473,17 +388,9 @@ export class PlaylistManager {
       })
       .filter((playlist: PlaylistInfo & { owner?: string }) => {
         const isValid = playlist.id && playlist.id.length > 0 && playlist.name && playlist.uri;
-        if (!isValid) {
-          console.warn('⚠️ Filtered out invalid playlist:', playlist);
-          return false;
-        }
-        
-        // Keep all valid playlists - ownership filtering will be done in getUserPlaylists()
-        return true;
+        return isValid;
       });
 
-    console.log(`✅ Successfully processed ${playlists.length} valid playlists`);
-    console.log(`🔍 COMPLETE PLAYLIST OBJECTS:`, JSON.stringify(playlists, null, 2));
     return playlists;
   }
 

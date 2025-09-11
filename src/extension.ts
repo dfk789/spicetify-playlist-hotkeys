@@ -31,21 +31,12 @@ class PlaylistHotkeyExtension {
   }
 
   async initialize(): Promise<void> {
-    console.log('PlaylistHotkeyExtension: Starting initialization...');
-    
     while (!Spicetify?.showNotification || !Spicetify?.CosmosAsync) {
-      console.log('PlaylistHotkeyExtension: Waiting for Spicetify APIs...');
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    console.log('PlaylistHotkeyExtension: Spicetify APIs available, setting up hotkeys...');
     await this.setupHotkeys();
-    
-    console.log('PlaylistHotkeyExtension: Initializing settings UI...');
     this.settingsUI.initialize();
-    
-    console.log('PlaylistHotkeyExtension: Extension fully loaded!');
-    Spicetify.showNotification('Playlist Hotkeys extension loaded!');
   }
 
   private async setupHotkeys(): Promise<void> {
@@ -78,7 +69,6 @@ class PlaylistHotkeyExtension {
       // Get playlist names for notification
       const playlistNames = playlistIds.map(id => {
         const playlist = this.playlistManager.getPlaylistById(id);
-        console.log(`📋 Getting name for playlist ${id}: ${playlist?.name || 'NOT FOUND'}`);
         return playlist?.name || `Playlist ${id.substring(0, 8)}`;
       });
       
@@ -107,14 +97,8 @@ class PlaylistHotkeyExtension {
   }
 
   private onConfigChange(newConfig: ExtensionConfig): void {
-    const globalModeChanged = this.config.globalMode !== newConfig.globalMode;
     this.config = newConfig;
     this.saveConfig(newConfig);
-    
-    if (globalModeChanged) {
-      console.log(`Global mode changed to: ${newConfig.globalMode}`);
-    }
-    
     this.setupHotkeys();
   }
 
