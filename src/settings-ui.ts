@@ -175,6 +175,9 @@ export class SettingsUI {
       margin-inline-start: 6px !important;
       background-color: transparent !important;
       color: var(--text-bright-accent, #107434) !important;
+      box-shadow: none !important;
+      border: none !important;
+      outline: none !important;
     `;
     
     button.addEventListener('click', () => {
@@ -343,7 +346,7 @@ export class SettingsUI {
       .filter(Boolean) as PlaylistInfo[];
 
     const playlistTags = selectedPlaylists
-      .map(p => `<span class="playlist-tag" data-id="${p.id}">${p.name} ×</span>`)
+      .map(p => `<span class="playlist-tag" data-id="${p.id}" style="display: inline-block; padding: 2px 6px; background: var(--spice-button); border-radius: 12px; font-size: 11px; cursor: pointer; margin-right: 4px;">${p.name} ×</span>`)
       .join('');
 
     return `
@@ -428,16 +431,18 @@ export class SettingsUI {
       }
     }, true);
 
-    this.settingsModal.addEventListener('blur', (e) => {
-      const target = e.target as HTMLInputElement;
+    // Add click-outside handler to hide dropdown
+    document.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const dropdown = document.querySelector('.active-playlist-dropdown');
+      const activeInput = document.querySelector('.active-search-input');
       
-      if (target.classList.contains('playlist-search')) {
-        // Delay hiding to allow clicking on options
-        setTimeout(() => {
-          this.hidePlaylistDropdown();
-        }, 200);
+      if (dropdown && activeInput && 
+          !dropdown.contains(target) && 
+          !activeInput.contains(target)) {
+        this.hidePlaylistDropdown();
       }
-    }, true);
+    });
   }
 
   private addPlaylistToMapping(selectElement: HTMLSelectElement): void {
@@ -457,12 +462,13 @@ export class SettingsUI {
         tag.setAttribute('data-id', playlistId);
         tag.textContent = `${playlistName} ×`;
         tag.style.cssText = `
-          background: var(--spice-button);
-          color: var(--spice-text);
+          display: inline-block;
           padding: 2px 6px;
+          background: var(--spice-button);
           border-radius: 12px;
-          font-size: 12px;
+          font-size: 11px;
           cursor: pointer;
+          margin-right: 4px;
         `;
         selectedContainer.appendChild(tag);
       }
@@ -522,7 +528,6 @@ export class SettingsUI {
         display: inline-block;
         padding: 2px 6px;
         background: var(--spice-button);
-        color: var(--spice-main);
         border-radius: 12px;
         font-size: 11px;
         cursor: pointer;
