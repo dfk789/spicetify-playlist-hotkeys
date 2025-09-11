@@ -306,7 +306,7 @@ export class SettingsUI {
           Enable Global Hotkeys (works when Spotify is in background)
         </label>
         <div style="font-size: 12px; color: var(--spice-subtext); margin-top: 4px;">
-          Global hotkeys work when Spotify is in the background or minimized.
+          Global hotkeys work when Spotify is in the background or minimized. (NOT IMPLEMENTED)
           ${this.config.globalMode ? '✅ Currently enabled' : '⚠️ Requires Electron access'}
         </div>
       </div>
