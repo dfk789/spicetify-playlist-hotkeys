@@ -31,23 +31,33 @@ class PlaylistHotkeyExtension {
   }
 
   async initialize(): Promise<void> {
+    console.log('PlaylistHotkeyExtension: Starting initialization...');
+    
     while (!Spicetify?.showNotification || !Spicetify?.CosmosAsync) {
+      console.log('PlaylistHotkeyExtension: Waiting for Spicetify APIs...');
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
+    console.log('PlaylistHotkeyExtension: Spicetify APIs available, setting up hotkeys...');
     await this.setupHotkeys();
+    
+    console.log('PlaylistHotkeyExtension: Initializing settings UI...');
     this.settingsUI.initialize();
     
+    console.log('PlaylistHotkeyExtension: Extension fully loaded!');
     Spicetify.showNotification('Playlist Hotkeys extension loaded!');
   }
 
   private async setupHotkeys(): Promise<void> {
     this.hotkeyManager.clearAll();
     
+    // Set global hotkeys mode
+    this.hotkeyManager.setGlobalHotkeysEnabled(this.config.globalMode);
+    
     for (const mapping of this.config.mappings) {
       this.hotkeyManager.register(mapping.combo, async () => {
         await this.handleHotkey(mapping.playlistIds);
-      });
+      }, this.config.globalMode);
     }
   }
 
@@ -62,19 +72,49 @@ class PlaylistHotkeyExtension {
 
       await this.playlistManager.addToPlaylists(currentUri, playlistIds);
       
-      const playlistCount = playlistIds.length;
-      Spicetify.showNotification(
-        `Added to ${playlistCount} playlist${playlistCount === 1 ? '' : 's'}`
-      );
+      // Ensure playlists are loaded before getting names
+      await this.playlistManager.getUserPlaylists();
+      
+      // Get playlist names for notification
+      const playlistNames = playlistIds.map(id => {
+        const playlist = this.playlistManager.getPlaylistById(id);
+        console.log(`📋 Getting name for playlist ${id}: ${playlist?.name || 'NOT FOUND'}`);
+        return playlist?.name || `Playlist ${id.substring(0, 8)}`;
+      });
+      
+      const notificationMessage = this.formatPlaylistNotification(playlistNames);
+      Spicetify.showNotification(notificationMessage);
     } catch (error) {
       console.error('Failed to add track to playlists:', error);
       Spicetify.showNotification('Failed to add track to playlists', true);
     }
   }
 
+  private formatPlaylistNotification(playlistNames: string[]): string {
+    const maxDisplayed = 4;
+    let message = '💚 Liked + added to:\n';
+    
+    if (playlistNames.length <= maxDisplayed) {
+      message += playlistNames.map(name => `• ${name}`).join('\n');
+    } else {
+      const displayed = playlistNames.slice(0, maxDisplayed);
+      const remaining = playlistNames.length - maxDisplayed;
+      message += displayed.map(name => `• ${name}`).join('\n');
+      message += `\n• and ${remaining} more playlist${remaining === 1 ? '' : 's'}`;
+    }
+    
+    return message;
+  }
+
   private onConfigChange(newConfig: ExtensionConfig): void {
+    const globalModeChanged = this.config.globalMode !== newConfig.globalMode;
     this.config = newConfig;
     this.saveConfig(newConfig);
+    
+    if (globalModeChanged) {
+      console.log(`Global mode changed to: ${newConfig.globalMode}`);
+    }
+    
     this.setupHotkeys();
   }
 
