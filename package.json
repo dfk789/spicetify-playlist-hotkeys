@@ -1,16 +1,10 @@
 {
   "name": "spicetify-playlist-hotkeys",
   "version": "1.0.0",
-  "description": "",
+  "description": "Spicetify extension to add hotkeys for adding current track to specific playlists",
   "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "lint": "echo \"(add linter later)\"",
-    "test": "echo \"(add tests later)\""
+    "build": "tsup"
   },
   "keywords": [],
   "author": "",

@@ -1,153 +1,88 @@
 # Spicetify Playlist Hotkeys
 
-A Spicetify extension that lets you press hotkeys to add the currently playing track to one or more playlists. Each hotkey can map to any number of playlists.
+Add currently playing tracks to playlists with customizable hotkeys. Press a key combination and instantly save the current song to one or more playlists.
 
 ## Features
 
-- ⌨️ **Configurable Hotkeys**: Map any key combination to playlists
-- 🎵 **Multi-Playlist Support**: Add current track to multiple playlists at once  
-- 🚫 **Smart Deduplication**: Skip tracks already in target playlists
-- ⚙️ **Simple Settings UI**: Easy configuration via in-app modal
-- 💾 **Persistent Config**: Settings saved across Spotify restarts
-- 🔔 **Toast Notifications**: Success/error feedback
+- ⌨️ **Custom Hotkeys**: Map any key combination to your playlists
+- 🎵 **Multiple Playlists**: Add current track to several playlists at once  
+- 🚫 **Smart Deduplication**: Automatically skips tracks already in playlists
+- 💚 **Auto-Like**: Automatically likes tracks when adding to playlists
+- 🔔 **Instant Feedback**: Toast notifications show success/failure
 
 ## Installation
 
 ### Prerequisites
-- [Spicetify](https://spicetify.app/) installed and configured
+- [Spicetify](https://spicetify.app/) installed and working
 - Spotify desktop app
 
-### Steps
+### Install Steps
 
-1. **Download/Build the extension**:
+1. **Build the extension**:
    ```bash
-   git clone https://github.com/yourusername/spicetify-playlist-hotkeys.git
+   git clone <this-repo>
    cd spicetify-playlist-hotkeys
    npm install
    npm run build
    ```
 
-2. **Install in Spicetify**:
+2. **Copy to Spicetify**:
    ```bash
-   # Copy to Extensions folder
-   cp dist/hotkey-playlist.js [YourSpicetifyExtensionsFolder]
+   # Find your extensions folder
+   spicetify path
    
-   # OR use spicetify CLI
-   spicetify config extensions hotkey-playlist.js
+   # Copy the built file (rename as needed)
+   cp dist/extension.js ~/.config/spicetify/Extensions/playlist-hotkeys.js
+   
+   # Enable the extension
+   spicetify config extensions playlist-hotkeys.js
    spicetify apply
    ```
 
-3. **Verify Installation**:
+3. **Verify it works**:
    - Open Spotify
-   - Look for "Hotkeys" button in the top bar
-   - You should see a "Playlist Hotkeys extension loaded!" notification
+   - Look for **"HK"** button in the bottom playbar (to the right of the add to playlist button)
+   - Click it to open settings
 
 ## Usage
 
 ### Setting Up Hotkeys
 
-1. Click the **"Hotkeys"** button in Spotify's top bar
+1. Click the **"HK"** button in the bottom playbar
 2. Click **"Add New Mapping"** 
-3. Enter a key combination (e.g., `Ctrl+Alt+1`)
-4. Select playlists from the dropdown
-5. Click **"Save"**
+3. Click in the hotkey field and press your desired key combination
+4. Type to search and select playlists
+5. Click **"Save Settings"**
 
 ### Using Hotkeys
 
-1. Start playing any track
-2. Press your configured hotkey
-3. Track will be added to all mapped playlists
-4. Success notification will appear
+1. Play any track in Spotify
+2. Press your configured hotkey combination
+3. Track gets added to your selected playlists AND liked automatically
+4. Success notification shows which playlists were updated
 
-### Hotkey Format
+### Hotkey Examples
 
-- `Ctrl+Alt+1` - Control + Alt + 1
-- `Shift+A` - Shift + A  
-- `Ctrl+Space` - Control + Space
-- `Alt+Up` - Alt + Up Arrow
-
-## Settings
-
-The settings modal allows you to:
-
-- ✅ Create hotkey → playlist mappings
-- ✅ Edit existing mappings  
-- ✅ Remove unwanted mappings
-- ✅ Add multiple playlists per hotkey
-- ⚠️ Toggle Global Hotkeys (Phase 1 - not yet implemented)
-
-## Development
-
-### Building
-
-```bash
-# Development (watch mode)
-npm run dev
-
-# Production build
-npm run build
-
-# Linting (placeholder)
-npm run lint
-```
-
-### Architecture
-
-```
-src/
-├── extension.ts     # Main entry point & orchestration
-├── hotkeys.ts      # Keyboard event handling & normalization
-├── playlists.ts    # Playlist operations & Spotify API calls
-└── settings-ui.ts  # Configuration modal interface
-```
-
-### API Documentation
-
-This project uses Context7 MCP for up-to-date Spicetify API documentation. See `docs/vendor/spicetify/` for vendored API references.
-
-## Roadmap
-
-### Phase 0: Foundation ✅ COMPLETE
-- ✅ In-app hotkeys  
-- ✅ Settings UI
-- ✅ Multi-playlist support
-- ✅ Configuration persistence
-
-### Phase 1: Global Hotkeys 🔄 PLANNED  
-- ⏸️ System-wide hotkeys (works when Spotify is in background)
-- ⏸️ Cross-platform helper process
-- ⏸️ IPC communication with extension
+- `Ctrl+1`, `Ctrl+2`, etc. - Quick playlist shortcuts
+- `Shift+A`, `Shift+B` - Letter-based shortcuts  
+- `Alt+F1`, `Alt+F2` - Function key combinations
 
 ## Troubleshooting
 
 ### Extension Not Loading
-- Ensure Spicetify is properly installed: `spicetify --help`
-- Check extension is in the correct folder: `spicetify path`
-- Try reapplying: `spicetify apply`
+- Run `spicetify path` to find your extensions folder
+- Make sure the file is named correctly (e.g., `playlist-hotkeys.js`)
+- Run `spicetify apply` to reload extensions
 
 ### Hotkeys Not Working  
-- Make sure Spotify window is focused (Phase 0 limitation)
-- Check for key combination conflicts with other apps
-- Try simpler combinations first (e.g., `Ctrl+1`)
+- Make sure Spotify window is focused
+- Check for conflicts with other apps using the same keys
+- Try simpler key combinations first
 
-### Settings Not Saving
-- Check browser console for errors (DevTools)
-- Verify LocalStorage permissions
-- Try refreshing Spotify
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Follow the coding guidelines in `AGENTS.md`
-4. Test your changes manually
-5. Submit a pull request
+### No Playlists Showing
+- Make sure you own the playlists (collaborative/followed playlists won't show)
+- Try refreshing Spotify if playlists don't load
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Acknowledgments
-
-- [Spicetify](https://spicetify.app/) for the extension framework
-- Context7 MCP for providing up-to-date API documentation
+MIT License
