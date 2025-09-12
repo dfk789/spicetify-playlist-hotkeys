@@ -13,8 +13,8 @@ Add currently playing tracks to playlists with customizable hotkeys. Press a key
 ## Installation
 
 ### Prerequisites
-- Spicetify installed and working
-- Spotify desktop app
+- [Spicetify](https://spicetify.app/) installed and working
+- [Spotify desktop app](https://www.spotify.com/download/)
 
 ### Install Steps
 
