@@ -4,6 +4,7 @@
  */
 
 import { PlaylistManager } from './playlists';
+import { HotkeyManager } from './hotkeys';
 
 interface HotkeyMapping {
   combo: string;
@@ -13,6 +14,8 @@ interface HotkeyMapping {
 interface ExtensionConfig {
   globalMode: boolean;
   mappings: HotkeyMapping[];
+  helperScriptPath?: string;
+  helperAutoStart?: boolean;
 }
 
 interface PlaylistInfo {
@@ -26,13 +29,15 @@ export class SettingsUI {
   private config: ExtensionConfig;
   private onConfigChange: (config: ExtensionConfig) => void;
   private playlistManager: PlaylistManager;
+  private hotkeyManager: HotkeyManager;
   private settingsModal: HTMLElement | null = null;
   private currentPlaylists: PlaylistInfo[] = [];
 
-  constructor(config: ExtensionConfig, onConfigChange: (config: ExtensionConfig) => void) {
+  constructor(config: ExtensionConfig, onConfigChange: (config: ExtensionConfig) => void, hotkeyManager: HotkeyManager) {
     this.config = { ...config };
     this.onConfigChange = onConfigChange;
     this.playlistManager = new PlaylistManager();
+    this.hotkeyManager = hotkeyManager;
   }
 
   initialize(): void {
@@ -306,10 +311,11 @@ export class SettingsUI {
           Enable Global Hotkeys (works when Spotify is in background)
         </label>
         <div style="font-size: 12px; color: var(--spice-subtext); margin-top: 4px;">
-          Global hotkeys work when Spotify is in the background or minimized. (NOT IMPLEMENTED)
-          ${this.config.globalMode ? '✅ Currently enabled' : '⚠️ Requires Electron access'}
+          ${this.getGlobalHotkeyStatusText()}
         </div>
       </div>
+
+      <!-- Helper settings simplified: rely on single status above. -->
 
       <h3>Hotkey Mappings</h3>
       <div id="mappings-container">
@@ -563,6 +569,7 @@ export class SettingsUI {
 
   private saveSettings(): void {
     const globalMode = (this.settingsModal?.querySelector('#global-mode') as HTMLInputElement)?.checked || false;
+    const helperScriptPath = (this.settingsModal?.querySelector('#helper-path') as HTMLInputElement)?.value || '';
     const mappings: HotkeyMapping[] = [];
 
     const mappingItems = this.settingsModal?.querySelectorAll('.mapping-item');
@@ -585,7 +592,9 @@ export class SettingsUI {
 
     const newConfig: ExtensionConfig = {
       globalMode,
-      mappings
+      mappings,
+      helperScriptPath: helperScriptPath || undefined,
+      helperAutoStart: this.config.helperAutoStart // Preserve existing value
     };
 
     this.config = newConfig;
@@ -741,4 +750,24 @@ export class SettingsUI {
     
     document.querySelectorAll('.active-search-input').forEach(el => el.classList.remove('active-search-input'));
   }
+
+  private getGlobalHotkeyStatusText(): string {
+    if (!this.config.globalMode) {
+      return '⚠️ Global hotkeys disabled';
+    }
+    
+    const status = this.hotkeyManager.getHelperStatus();
+    if (status.available && status.ready) {
+      return '✅ Global hotkeys active via helper';
+    } else if (status.available) {
+      return '🔄 Helper found, connecting...';
+    } else {
+      return '🔴 Helper not running - start helper (python or standalone)';
+    }
+  }
+
 }
+
+
+
+

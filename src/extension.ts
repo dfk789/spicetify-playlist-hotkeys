@@ -15,6 +15,8 @@ interface HotkeyMapping {
 interface ExtensionConfig {
   globalMode: boolean;
   mappings: HotkeyMapping[];
+  helperScriptPath?: string;
+  helperAutoStart?: boolean;
 }
 
 class PlaylistHotkeyExtension {
@@ -27,7 +29,7 @@ class PlaylistHotkeyExtension {
     this.config = this.loadConfig();
     this.hotkeyManager = new HotkeyManager();
     this.playlistManager = new PlaylistManager();
-    this.settingsUI = new SettingsUI(this.config, this.onConfigChange.bind(this));
+    this.settingsUI = new SettingsUI(this.config, this.onConfigChange.bind(this), this.hotkeyManager);
   }
 
   async initialize(): Promise<void> {
@@ -50,6 +52,9 @@ class PlaylistHotkeyExtension {
         await this.handleHotkey(mapping.playlistIds);
       }, this.config.globalMode);
     }
+
+    // Ensure helper receives current combos
+    void this.hotkeyManager.syncGlobalHelperCombos();
   }
 
   private async handleHotkey(playlistIds: string[]): Promise<void> {
@@ -114,7 +119,9 @@ class PlaylistHotkeyExtension {
 
     return {
       globalMode: false,
-      mappings: []
+      mappings: [],
+      helperScriptPath: undefined,
+      helperAutoStart: false
     };
   }
 
