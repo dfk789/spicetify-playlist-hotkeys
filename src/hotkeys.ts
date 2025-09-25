@@ -1,9 +1,3 @@
-/**
- * Hotkey Management for Spicetify Extension
- * Handles in-app keyboard shortcuts with combo normalization and global helper support
- */
-
-// Helper constants
 const HELPER_ORIGIN = "http://127.0.0.1:17976";
 
 type HotkeyCallback = () => void | Promise<void>;
@@ -20,13 +14,15 @@ export class HotkeyManager {
   private isListening = false;
   private globalHotkeysEnabled = false;
 
-  // Helper client state
   private helperToken: string | null = null;
   private helperES: EventSource | null = null;
   private helperAvailable = false;
   private helperReady = false;
   private helperSyncDebounce?: number;
   private helperRetryTimer?: number;
+
+  private executionLocks: Map<string, boolean> = new Map();
+  private lockTimeout = 500;
 
   constructor() {
     this.handleKeydown = this.handleKeydown.bind(this);
@@ -42,9 +38,8 @@ export class HotkeyManager {
     };
 
     if (isGlobal && this.globalHotkeysEnabled) {
-      // Register for global hotkeys via helper
       this.globalRegistrations.set(normalizedCombo, registration);
-      
+
       this.ensureHelper().then((ok) => {
         if (ok) {
           this.startHelperEvents();
@@ -53,18 +48,11 @@ export class HotkeyManager {
       });
     }
     
-    // ALWAYS register as in-app hotkey as well (for fallback when helper not running)
     this.registrations.set(normalizedCombo, registration);
-    
+
     if (!this.isListening) {
       this.startListening();
     }
-    
-    console.log(`?? Registered hotkey: ${combo} -> ${normalizedCombo}`);
-    console.log(`   - Global enabled: ${this.globalHotkeysEnabled}`);
-    console.log(`   - Is global request: ${isGlobal}`);
-    console.log(`   - Global registrations: ${this.globalRegistrations.size}`);
-    console.log(`   - In-app registrations: ${this.registrations.size}`);
   }
 
   unregister(combo: string): void {
@@ -85,19 +73,15 @@ export class HotkeyManager {
   }
 
   setGlobalHotkeysEnabled(enabled: boolean): void {
-    console.log(`?? Global hotkeys ${enabled ? 'enabled' : 'disabled'}`);
     this.globalHotkeysEnabled = enabled;
-    
+
     if (enabled) {
-      // Only try helper - no Electron fallback
       this.ensureHelper().then((ok) => {
         if (ok) {
-          console.log('?? Using global hotkey helper');
           this.stopHelperRetry();
           this.startHelperEvents();
           void this.syncGlobalHelperCombos();
         } else {
-          // Start retry loop until helper becomes available
           this.startHelperRetry();
         }
       });
@@ -124,20 +108,21 @@ export class HotkeyManager {
   private async handleKeydown(event: KeyboardEvent): Promise<void> {
     const combo = this.buildComboFromEvent(event);
     const registration = this.registrations.get(combo);
-    
-    // Debug logging to see what keys are being pressed
-    if (combo && (event.ctrlKey || event.altKey || event.shiftKey)) {
-      console.log(`?? Key pressed: ${combo}, registered: ${!!registration}, available: [${Array.from(this.registrations.keys()).join(', ')}]`);
-    }
-    
+
     if (registration) {
       event.preventDefault();
       event.stopPropagation();
-      
+
+      if (!this.acquireLock(combo)) {
+        return;
+      }
+
       try {
         await registration.callback();
       } catch (error) {
         console.error('Hotkey callback error:', error);
+      } finally {
+        this.releaseLock(combo);
       }
     }
   }
@@ -198,16 +183,34 @@ export class HotkeyManager {
     if (key.length === 1) {
       return key.toUpperCase();
     }
-    
+
     const keyMap: Record<string, string> = {
       'ArrowUp': 'Up',
-      'ArrowDown': 'Down', 
+      'ArrowDown': 'Down',
       'ArrowLeft': 'Left',
       'ArrowRight': 'Right',
       ' ': 'Space'
     };
-    
+
     return keyMap[key] || key;
+  }
+
+  // Execution lock methods to prevent double triggers
+  private acquireLock(combo: string): boolean {
+    if (this.executionLocks.get(combo)) {
+      return false;
+    }
+
+    this.executionLocks.set(combo, true);
+    setTimeout(() => {
+      this.executionLocks.delete(combo);
+    }, this.lockTimeout);
+
+    return true;
+  }
+
+  private releaseLock(combo: string): void {
+    this.executionLocks.delete(combo);
   }
 
   getRegistrations(): HotkeyRegistration[] {
@@ -221,9 +224,8 @@ export class HotkeyManager {
   private async ensureHelper(): Promise<boolean> {
     if (this.helperAvailable && this.helperToken) return true;
     try {
-      const res = await fetch(`${HELPER_ORIGIN}/hello`, { 
+      const res = await fetch(`${HELPER_ORIGIN}/hello`, {
         method: "GET",
-        // Short timeout for quick response
         signal: AbortSignal.timeout(2000)
       });
       if (!res.ok) return false;
@@ -237,7 +239,6 @@ export class HotkeyManager {
     } catch (error: any) {
       this.helperAvailable = false;
       this.helperToken = null;
-      // Don't spam console with connection errors - helper might not be running
       return false;
     }
   }
@@ -245,43 +246,39 @@ export class HotkeyManager {
   private startHelperEvents(): void {
     if (!this.helperAvailable || this.helperES) return;
     try {
-      // Pass token via query since EventSource cannot set headers
       const tokenParam = this.helperToken ? `?token=${encodeURIComponent(this.helperToken)}` : "";
       const es = new EventSource(`${HELPER_ORIGIN}/events${tokenParam}`);
       es.onmessage = async (ev) => {
         try {
           const msg = JSON.parse(ev.data);
-          console.log('?? Helper message:', msg);
-          
+
           if (msg.ready) {
             this.helperReady = true;
-            console.log('? Helper ready, syncing combos...');
-            // sync combos once stream is ready
             void this.syncGlobalHelperCombos();
             return;
           }
           if (msg.combo) {
-            console.log('?? Helper hotkey triggered:', msg.combo);
             const normalized = this.normalizeCombo(String(msg.combo));
-            console.log('?? Looking for registration:', normalized, 'in', Array.from(this.globalRegistrations.keys()));
             const reg = this.globalRegistrations.get(normalized);
             if (reg) {
-              console.log('? Found registration, executing callback');
-              try { 
-                await reg.callback(); 
+              if (!this.acquireLock(normalized)) {
+                return;
+              }
+
+              try {
+                await reg.callback();
               } catch (err) {
                 console.error("Global hotkey helper callback error:", err);
+              } finally {
+                this.releaseLock(normalized);
               }
-            } else {
-              console.warn('? No registration found for:', normalized);
             }
           }
         } catch (e) {
-          console.error('? Helper message parse error:', e);
+          console.error('Helper message parse error:', e);
         }
       };
       es.onerror = () => {
-        // Tear down broken connection and force fresh handshake/token
         try { es.close(); } catch {}
         this.helperES = null;
         this.helperReady = false;
@@ -305,46 +302,34 @@ export class HotkeyManager {
 
   public async syncGlobalHelperCombos(): Promise<void> {
     if (!this.helperAvailable || !this.helperToken || !this.globalHotkeysEnabled) {
-      console.log('?? syncGlobalHelperCombos skipped:', {
-        helperAvailable: this.helperAvailable,
-        helperToken: !!this.helperToken,
-        globalHotkeysEnabled: this.globalHotkeysEnabled
-      });
       return;
     }
     if (!this.helperReady) {
-      console.log('?? syncGlobalHelperCombos waiting for helper ready...');
-      return; // wait until /events ready ping
+      return;
     }
-    
+
     const combos = Array.from(this.globalRegistrations.keys());
     const body = { combos };
     const headers = {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${this.helperToken}`,
     };
-    
-    console.log('?? Syncing combos to helper:', combos);
-    
+
     try {
-      // Debounce rapid re-writes
       if (this.helperSyncDebounce) window.clearTimeout(this.helperSyncDebounce);
       this.helperSyncDebounce = window.setTimeout(async () => {
         try {
-          const response = await fetch(`${HELPER_ORIGIN}/config`, { 
-            method: "POST", 
-            headers, 
-            body: JSON.stringify(body) 
+          const response = await fetch(`${HELPER_ORIGIN}/config`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body)
           });
-          
-          if (response.ok) {
-            const result = await response.json();
-            console.log('? Helper config updated:', result);
-          } else {
-            console.error('? Helper config failed:', response.status, response.statusText);
+
+          if (!response.ok) {
+            console.error('Helper config failed:', response.status, response.statusText);
           }
         } catch (e) {
-          console.error('? Helper config error:', e);
+          console.error('Helper config error:', e);
         }
       }, 200);
     } catch (e) {
@@ -352,7 +337,6 @@ export class HotkeyManager {
     }
   }
 
-  // Helper availability retry logic
   private startHelperRetry(): void {
     if (this.helperRetryTimer) return;
     const attempt = async () => {
@@ -367,7 +351,6 @@ export class HotkeyManager {
         void this.syncGlobalHelperCombos();
       }
     };
-    // Try immediately, then poll
     void attempt();
     this.helperRetryTimer = window.setInterval(attempt, 3000);
   }

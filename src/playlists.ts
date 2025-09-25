@@ -1,7 +1,3 @@
-/**
- * Playlist Manager for Spicetify Extension
- * Handles adding tracks to playlists and fetching user playlists
- */
 
 export interface PlaylistInfo {
   id: string;
@@ -10,92 +6,211 @@ export interface PlaylistInfo {
   owner?: string;
 }
 
+const DEBUG_STORAGE_KEY = 'playlist-hotkeys-debug';
+
+export interface PlaylistAddResult {
+  added: string[];
+  alreadyPresent: string[];
+  failed: { playlistId: string; error: string }[];
+  likedStatus: 'added' | 'already-liked' | 'failed';
+}
+
+interface PlaylistTrackCacheEntry {
+  uris: Set<string>;
+  trackIds: Set<string>;
+  timestamp: number;
+  complete: boolean;
+}
+
 export class PlaylistManager {
   private playlistCache = new Map<string, PlaylistInfo>();
   private cacheExpiry = 5 * 60 * 1000; // 5 minutes
   private lastCacheUpdate = 0;
+  private playlistTrackCache = new Map<string, PlaylistTrackCacheEntry>();
+  private playlistTrackCacheTTL = 2 * 60 * 1000; // 2 minutes
+  private pendingTrackOperations = new Map<string, Promise<void>>();
 
-  /**
-   * Add a track to multiple playlists and automatically like it
-   */
-  async addToPlaylists(trackUri: string, playlistIds: string[]): Promise<void> {
+  private debugEnabled = Spicetify.LocalStorage?.get(DEBUG_STORAGE_KEY) === 'true';
+  private debug(...args: unknown[]): void {
+    if (!this.debugEnabled) {
+      return;
+    }
+    console.log('[PlaylistManager]', ...args);
+  }
+
+  public setDebug(enabled: boolean): void {
+    this.debugEnabled = enabled;
+    console.log('[PlaylistManager] Debug', enabled ? 'enabled' : 'disabled');
+  }
+
+  async addToPlaylists(trackUri: string, playlistIds: string[]): Promise<PlaylistAddResult> {
     if (!trackUri || playlistIds.length === 0) {
       throw new Error('Invalid track URI or empty playlist list');
     }
 
-    // First, add to liked songs
-    try {
-      await this.addToLikedSongs(trackUri);
-    } catch (error) {
-      // Don't throw error here - continue with playlists even if like fails
+    const uniquePlaylistIds = Array.from(new Set(playlistIds.filter(Boolean)));
+    if (uniquePlaylistIds.length === 0) {
+      throw new Error('No valid playlist identifiers provided');
     }
 
-    // Then add to playlists
-    const promises = playlistIds.map(id => this.addToSinglePlaylist(trackUri, id));
-    const results = await Promise.allSettled(promises);
-    
-    const failures = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[];
-    const successes = results.filter(result => result.status === 'fulfilled');
-    
-    // Only throw error if ALL playlists failed
-    if (failures.length > 0 && successes.length === 0) {
-      const errorMessages = failures.map(f => f.reason?.message || 'Unknown error').join(', ');
-      throw new Error(`Failed to add to all ${failures.length} playlist(s): ${errorMessages}`);
+    this.debug('addToPlaylists:start', { trackUri, playlistIds, uniquePlaylistIds });
+
+    const added: string[] = [];
+    const alreadyPresent: string[] = [];
+    const failed: { playlistId: string; error: string }[] = [];
+
+    const likedStatus = await this.addToLikedSongs(trackUri);
+    this.debug('addToPlaylists:likedStatus', { trackUri, likedStatus });
+
+    await Promise.all(
+      uniquePlaylistIds.map(async playlistId => {
+        try {
+          const outcome = await this.addToSinglePlaylist(trackUri, playlistId);
+          this.debug('addToPlaylists:playlistOutcome', { playlistId, outcome });
+          if (outcome === 'already-present') {
+            alreadyPresent.push(playlistId);
+          } else {
+            added.push(playlistId);
+          }
+        } catch (error: any) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.debug('addToPlaylists:playlistFailed', { playlistId, error: message });
+          failed.push({ playlistId, error: message || 'Unknown error' });
+        }
+      })
+    );
+
+    if (added.length === 0 && alreadyPresent.length === 0 && failed.length === uniquePlaylistIds.length) {
+      const errorMessages = failed.map(entry => entry.error).join(', ');
+      throw new Error(`Failed to add to all ${failed.length} playlist(s): ${errorMessages}`);
+    }
+
+    const summary = {
+      added,
+      alreadyPresent,
+      failed,
+      likedStatus,
+    };
+
+    this.debug('addToPlaylists:summary', summary);
+
+    return summary;
+  }
+
+  private async addToSinglePlaylist(trackUri: string, playlistId: string): Promise<'added' | 'already-present'> {
+    return this.withTrackLock(playlistId, trackUri, async () => {
+      this.debug('addToSinglePlaylist:start', { playlistId, trackUri });
+
+      try {
+        const alreadyInPlaylist = await this.isTrackInPlaylist(trackUri, playlistId);
+        this.debug('addToSinglePlaylist:isTrackInPlaylist', { playlistId, trackUri, alreadyInPlaylist });
+        if (alreadyInPlaylist) {
+          return 'already-present';
+        }
+
+        const response = await Spicetify.CosmosAsync.post(
+          `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+          { uris: [trackUri] }
+        );
+        this.debug('addToSinglePlaylist:postResponse', { playlistId, trackUri, response });
+
+        await this.addTrackToCache(playlistId, trackUri);
+        return 'added';
+      } catch (error: any) {
+        this.debug('addToSinglePlaylist:error', { playlistId, trackUri, error });
+
+        if (this.isDuplicateTrackError(error)) {
+          this.debug('addToSinglePlaylist:duplicateDetected', { playlistId, trackUri, error });
+          await this.addTrackToCache(playlistId, trackUri);
+          return 'already-present';
+        }
+
+        if (error?.status === 403 || error?.message?.includes('403') || error?.message?.includes('Forbidden')) {
+          throw new Error(`Playlist is read-only or you don't have permission to add tracks`);
+        }
+
+        const errorDetails = error instanceof Error ?
+          `${error.message} (status: ${error.status || 'unknown'})` :
+          `Unknown error: ${String(error)}`;
+        throw new Error(`Failed to add to playlist ${playlistId}: ${errorDetails}`);
+      }
+    });
+  }
+
+  private async withTrackLock<T>(playlistId: string, trackUri: string, task: () => Promise<T>): Promise<T> {
+    const key = `${playlistId}:${trackUri}`;
+    const previous = this.pendingTrackOperations.get(key) ?? Promise.resolve();
+
+    const execution = (async () => {
+      await previous.catch(() => undefined);
+      return task();
+    })();
+
+    const completion = execution.then(() => undefined, () => undefined);
+    this.pendingTrackOperations.set(key, completion);
+
+    try {
+      return await execution;
+    } finally {
+      const current = this.pendingTrackOperations.get(key);
+      if (current === completion) {
+        this.pendingTrackOperations.delete(key);
+      }
     }
   }
 
-  /**
-   * Add a track to a single playlist
-   */
-  private async addToSinglePlaylist(trackUri: string, playlistId: string): Promise<void> {
-    try {
-      // Check if track is already in playlist to avoid duplicates
-      if (await this.isTrackInPlaylist(trackUri, playlistId)) {
-        return;
-      }
-
-      await Spicetify.CosmosAsync.post(
-        `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
-        { uris: [trackUri] }
-      );
-    } catch (error: any) {
-      // Handle 403 Forbidden errors (read-only playlists)
-      if (error.status === 403 || error.message?.includes('403') || error.message?.includes('Forbidden')) {
-        throw new Error(`Playlist is read-only or you don't have permission to add tracks`);
-      }
-      
-      throw new Error(`Failed to add to playlist ${playlistId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  private isDuplicateTrackError(error: any): boolean {
+    if (!error) {
+      return false;
     }
+
+    const status = Number(error.status);
+    if (status !== 400 && status !== 409) {
+      return false;
+    }
+
+    const reason = (error?.body?.error?.reason ?? error?.reason ?? '').toString().toLowerCase();
+    const message = (error?.message ?? '').toString().toLowerCase();
+
+    return reason.includes('duplicate') || message.includes('duplicate');
   }
 
-  /**
-   * Add a track to liked songs
-   */
-  private async addToLikedSongs(trackUri: string): Promise<void> {
+  private async addToLikedSongs(trackUri: string): Promise<'added' | 'already-liked' | 'failed'> {
+    this.debug('addToLikedSongs:start', { trackUri });
+
     try {
       const trackId = this.extractTrackId(trackUri);
       if (!trackId) {
-        throw new Error('Invalid track URI format');
+        this.debug('addToLikedSongs:invalidTrackUri', { trackUri });
+        return 'failed';
       }
 
-      // Check if already liked to avoid unnecessary API calls
       const isLiked = await this.isTrackLiked(trackUri);
       if (isLiked) {
-        return;
+        this.debug('addToLikedSongs:alreadyLiked', { trackUri });
+        return 'already-liked';
       }
 
       await Spicetify.CosmosAsync.put(
         `https://api.spotify.com/v1/me/tracks`,
         { ids: [trackId] }
       );
+
+      this.debug('addToLikedSongs:succeeded', { trackUri });
+      return 'added';
     } catch (error) {
-      throw new Error(`Failed to like track: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      this.debug('addToLikedSongs:error', { trackUri, error });
+
+      if (error instanceof SyntaxError || (error as any)?.name === 'SyntaxError') {
+        this.debug('addToLikedSongs:ignoringSyntaxError', { trackUri });
+        return 'added';
+      }
+
+      console.error('Failed to like track:', error);
+      return 'failed';
     }
   }
 
-  /**
-   * Check if a track is already liked
-   */
   private async isTrackLiked(trackUri: string): Promise<boolean> {
     try {
       const trackId = this.extractTrackId(trackUri);
@@ -111,175 +226,431 @@ export class PlaylistManager {
     }
   }
 
-  private async getTrackIdCandidates(trackUri: string): Promise<string[]> {
-    if (!trackUri || !trackUri.startsWith('spotify:track:')) {
-      return [];
+  private async getTrackIdCandidates(trackUri: string): Promise<{ ids: string[]; uris: string[] }> {
+    const uris = new Set<string>();
+    const ids = new Set<string>();
+
+    this.debug('getTrackIdCandidates:start', { trackUri });
+
+    if (trackUri) {
+      uris.add(trackUri);
     }
 
-    const baseId = this.extractTrackId(trackUri);
-    if (!baseId) {
-      return [];
-    }
-
-    const ids = new Set<string>([baseId]);
-
-    try {
-      const trackResponse = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${baseId}`);
-
-      const linkedFrom = trackResponse?.linked_from;
-      const linkedFromId = typeof linkedFrom?.id === 'string' ? linkedFrom.id : undefined;
-      const linkedFromUri = typeof linkedFrom?.uri === 'string' ? linkedFrom.uri : undefined;
-
-      if (linkedFromId) {
-        ids.add(linkedFromId);
+    const isSpotifyTrack = trackUri.startsWith('spotify:track:');
+    if (isSpotifyTrack) {
+      const baseId = this.extractTrackId(trackUri);
+      if (baseId) {
+        ids.add(baseId);
       }
 
-      if (linkedFromUri) {
-        const linkedId = this.extractTrackId(linkedFromUri);
-        if (linkedId) {
-          ids.add(linkedId);
-        }
+      try {
+        const trackResponse = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${baseId}`);
+
+        const addUri = (uri?: string) => {
+          if (!uri) {
+            return;
+          }
+          uris.add(uri);
+          const derivedId = this.extractTrackId(uri);
+          if (derivedId) {
+            ids.add(derivedId);
+          }
+        };
+
+        const addId = (id?: string) => {
+          if (id) {
+            ids.add(id);
+          }
+        };
+
+        addUri(typeof trackResponse?.uri === 'string' ? trackResponse.uri : undefined);
+        addId(typeof trackResponse?.id === 'string' ? trackResponse.id : undefined);
+
+        const linkedFrom = trackResponse?.linked_from;
+        addUri(typeof linkedFrom?.uri === 'string' ? linkedFrom.uri : undefined);
+        addId(typeof linkedFrom?.id === 'string' ? linkedFrom.id : undefined);
+      } catch (error) {
+        // Ignore lookup failures and fall back to the base track ID.
       }
-    } catch (error) {
-      // Ignore lookup failures and fall back to the base track ID.
     }
 
-    return Array.from(ids);
+    const result = { ids: Array.from(ids), uris: Array.from(uris) };
+    this.debug('getTrackIdCandidates:result', { trackUri, ids: result.ids.length, uris: result.uris.length });
+    return result;
   }
 
-  /**
-   * Check if a track is already in a playlist
-   */
   private async isTrackInPlaylist(trackUri: string, playlistId: string): Promise<boolean> {
-    const candidateIds = await this.getTrackIdCandidates(trackUri);
-    const targetTrackId = this.extractTrackId(trackUri);
+    const { ids, uris } = await this.getTrackIdCandidates(trackUri);
+    const candidateUris = new Set<string>(uris);
+    candidateUris.add(trackUri);
 
-    const idSet = new Set<string>(candidateIds);
-    const isSpotifyTrack = trackUri.startsWith('spotify:track:');
-    if (isSpotifyTrack && targetTrackId) {
-      idSet.add(targetTrackId);
-    }
+    const candidateIdSet = new Set<string>(ids);
+    this.debug('isTrackInPlaylist:candidates', {
+      playlistId,
+      trackUri,
+      candidateUriCount: candidateUris.size,
+      candidateIdCount: candidateIdSet.size,
+    });
 
-    const idList = isSpotifyTrack ? Array.from(idSet) : [];
-    const batchSize = 50;
-    let containsCheckSucceeded = idList.length > 0;
-
-    for (let i = 0; i < idList.length; i += batchSize) {
-      const batch = idList.slice(i, i + batchSize);
-      const containsParams = new URLSearchParams({ ids: batch.join(',') });
-
-      try {
-        const response = await Spicetify.CosmosAsync.get(
-          `https://api.spotify.com/v1/playlists/${playlistId}/tracks/contains?${containsParams.toString()}`
-        );
-
-        if (!Array.isArray(response)) {
-          containsCheckSucceeded = false;
-          break;
-        }
-
-        if (response.some(Boolean)) {
-          return true;
-        }
-      } catch (error) {
-        containsCheckSucceeded = false;
-        break;
-      }
-    }
-
-    if (containsCheckSucceeded && idList.length > 0) {
-      return false;
-    }
-
-    const limit = 100;
-    let offset = 0;
-
-    while (true) {
-      const pageParams = new URLSearchParams({
-        fields: 'items(track(uri,id,linked_from(uri,id))),total',
-        limit: limit.toString(),
-        offset: offset.toString(),
+    const cacheEntry = this.getFreshPlaylistTrackCache(playlistId);
+    if (cacheEntry) {
+      this.debug('isTrackInPlaylist:cacheHit', {
+        playlistId,
+        trackUri,
+        cacheUris: cacheEntry.uris.size,
+        cacheIds: cacheEntry.trackIds.size,
+        cacheComplete: cacheEntry.complete,
       });
 
-      let response: any;
-      try {
-        response = await Spicetify.CosmosAsync.get(
-          `https://api.spotify.com/v1/playlists/${playlistId}/tracks?${pageParams.toString()}`
-        );
-      } catch (error) {
-        return false;
-      }
-
-      const items = Array.isArray(response?.items) ? response.items : [];
-      const found = items.some((item: any) => {
-        const track = item?.track;
-        if (!track) {
-          return false;
-        }
-
-        const candidateUris = [track.uri, track.linked_from?.uri].filter(Boolean) as string[];
-        if (candidateUris.includes(trackUri)) {
-          return true;
-        }
-
-        const idsInPlaylist = new Set<string>();
-        if (typeof track.id === 'string' && track.id) {
-          idsInPlaylist.add(track.id);
-        }
-        if (typeof track.linked_from?.id === 'string' && track.linked_from.id) {
-          idsInPlaylist.add(track.linked_from.id);
-        }
-
-        for (const uri of candidateUris) {
-          const candidateId = this.extractTrackId(uri);
-          if (candidateId) {
-            idsInPlaylist.add(candidateId);
-          }
-        }
-
-        for (const id of idsInPlaylist) {
-          if (idSet.has(id)) {
-            return true;
-          }
-        }
-
-        return false;
-      });
-
-      if (found) {
+      if (this.cacheHasCandidate(cacheEntry, candidateUris, candidateIdSet)) {
+        this.debug('isTrackInPlaylist:cacheMatch', { playlistId, trackUri });
         return true;
       }
 
-      const fetchedCount = items.length;
-      if (fetchedCount === 0) {
-        break;
+      if (cacheEntry.complete) {
+        this.debug('isTrackInPlaylist:cacheCompleteNoMatch', { playlistId, trackUri });
+        return false;
       }
+    }
 
-      offset += fetchedCount;
+    const found = await this.scanPlaylistForTrack(playlistId, candidateUris, candidateIdSet);
+    this.debug('isTrackInPlaylist:scanResult', { playlistId, trackUri, found });
 
-      const total = typeof response?.total === 'number' ? response.total : undefined;
-      if (typeof total === 'number' && offset >= total) {
-        break;
+    return found;
+  }
+
+  private getFreshPlaylistTrackCache(playlistId: string): PlaylistTrackCacheEntry | undefined {
+    const entry = this.playlistTrackCache.get(playlistId);
+    if (!entry) {
+      return undefined;
+    }
+
+    if (Date.now() - entry.timestamp > this.playlistTrackCacheTTL) {
+      this.playlistTrackCache.delete(playlistId);
+      return undefined;
+    }
+
+    return entry;
+  }
+
+  private cacheHasCandidate(
+    entry: PlaylistTrackCacheEntry,
+    candidateUris: Set<string>,
+    candidateIds: Set<string>
+  ): boolean {
+    for (const uri of candidateUris) {
+      if (entry.uris.has(uri)) {
+        return true;
       }
+    }
 
-      if (fetchedCount < limit) {
-        break;
+    if (candidateIds.size > 0) {
+      for (const id of candidateIds) {
+        if (entry.trackIds.has(id)) {
+          return true;
+        }
       }
     }
 
     return false;
   }
 
-  /**
-   * Get all user playlists with multiple endpoint fallbacks and pagination
-   */
+  private updatePlaylistCacheWithTrack(
+    playlistId: string,
+    uris: Iterable<string>,
+    ids: Iterable<string>,
+    complete: boolean
+  ): void {
+    const now = Date.now();
+    let entry = this.playlistTrackCache.get(playlistId);
+
+    if (!entry) {
+      entry = {
+        uris: new Set<string>(),
+        trackIds: new Set<string>(),
+        timestamp: now,
+        complete,
+      };
+      this.playlistTrackCache.set(playlistId, entry);
+    }
+
+    for (const uri of uris) {
+      if (uri) {
+        entry.uris.add(uri);
+      }
+    }
+
+    for (const id of ids) {
+      if (id) {
+        entry.trackIds.add(id);
+      }
+    }
+
+    entry.timestamp = now;
+    if (complete) {
+      entry.complete = true;
+    }
+  }
+
+  private replacePlaylistCacheEntry(
+    playlistId: string,
+    uris: Set<string>,
+    ids: Set<string>,
+    complete: boolean
+  ): void {
+    this.playlistTrackCache.set(playlistId, {
+      uris: new Set(uris),
+      trackIds: new Set(ids),
+      timestamp: Date.now(),
+      complete,
+    });
+  }
+
+  private splitIntoBatches<T>(items: T[], batchSize: number): T[][] {
+    if (batchSize <= 0) {
+      return [items];
+    }
+
+    const batches: T[][] = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+      batches.push(items.slice(i, i + batchSize));
+    }
+    return batches;
+  }
+
+  private async addTrackToCache(playlistId: string, trackUri: string): Promise<void> {
+    const { ids, uris } = await this.getTrackIdCandidates(trackUri);
+    const uriSet = new Set<string>(uris);
+    uriSet.add(trackUri);
+    const idSet = new Set<string>(ids);
+
+    this.updatePlaylistCacheWithTrack(playlistId, uriSet, idSet, false);
+  }
+
+  private async scanPlaylistForTrack(
+    playlistId: string,
+    candidateUris: Set<string>,
+    candidateIds: Set<string>
+  ): Promise<boolean> {
+    this.debug('scanPlaylistForTrack:start', {
+      playlistId,
+      candidateUriCount: candidateUris.size,
+      candidateIdCount: candidateIds.size,
+    });
+
+    const limit = 100;
+    const aggregatedUris = new Set<string>();
+    const aggregatedIds = new Set<string>();
+    let complete = true;
+
+    const addUriCandidate = (uri?: string): boolean => {
+      if (!uri) {
+        return false;
+      }
+      aggregatedUris.add(uri);
+      return candidateUris.has(uri);
+    };
+
+    const addIdCandidate = (id?: string): boolean => {
+      if (!id) {
+        return false;
+      }
+      aggregatedIds.add(id);
+      return candidateIds.has(id);
+    };
+
+    const processItems = (items: any[]): boolean => {
+      for (const item of items) {
+        const track = item?.track;
+        if (!track) {
+          continue;
+        }
+
+        const uriCandidates = new Set<string>();
+        if (typeof track.uri === 'string') {
+          uriCandidates.add(track.uri);
+        }
+        if (typeof track.linked_from?.uri === 'string') {
+          uriCandidates.add(track.linked_from.uri);
+        }
+
+        for (const uri of uriCandidates) {
+          if (addUriCandidate(uri)) {
+            this.debug('scanPlaylistForTrack:matchUri', { playlistId, uri });
+            return true;
+          }
+        }
+
+        const idCandidates = new Set<string>();
+        if (typeof track.id === 'string') {
+          idCandidates.add(track.id);
+        }
+        if (typeof track.linked_from?.id === 'string') {
+          idCandidates.add(track.linked_from.id);
+        }
+        for (const uri of uriCandidates) {
+          const derivedId = this.extractTrackId(uri);
+          if (derivedId) {
+            idCandidates.add(derivedId);
+          }
+        }
+
+        const directId = this.extractTrackId(typeof track.uri === 'string' ? track.uri : '');
+        if (directId) {
+          idCandidates.add(directId);
+        }
+
+        for (const id of idCandidates) {
+          if (addIdCandidate(id)) {
+            this.debug('scanPlaylistForTrack:matchId', { playlistId, id });
+            return true;
+          }
+        }
+      }
+
+      return false;
+    };
+
+    const fetchPage = async (offset: number) => {
+      const pageParams = new URLSearchParams({
+        fields: 'items(track(uri,id,linked_from(uri,id))),total',
+        limit: limit.toString(),
+        offset: offset.toString(),
+      });
+
+      return Spicetify.CosmosAsync.get(
+        `https://api.spotify.com/v1/playlists/${playlistId}/tracks?${pageParams.toString()}`
+      );
+    };
+
+    let response: any;
+    try {
+      response = await fetchPage(0);
+    } catch (error) {
+      return false;
+    }
+
+    const firstItems = Array.isArray(response?.items) ? response.items : [];
+    this.debug('scanPlaylistForTrack:firstPage', {
+      playlistId,
+      items: firstItems.length,
+      total: response?.total,
+    });
+    if (processItems(firstItems)) {
+      this.updatePlaylistCacheWithTrack(playlistId, aggregatedUris, aggregatedIds, false);
+      this.updatePlaylistCacheWithTrack(playlistId, candidateUris, candidateIds, false);
+      return true;
+    }
+
+    const total = typeof response?.total === 'number' ? response.total : undefined;
+
+    if (total === undefined) {
+      let offset = firstItems.length;
+      let lastFetched = firstItems.length;
+
+      while (lastFetched === limit) {
+        try {
+          const page = await fetchPage(offset);
+          const items = Array.isArray(page?.items) ? page.items : [];
+          this.debug('scanPlaylistForTrack:page', { playlistId, offset, items: items.length });
+          lastFetched = items.length;
+          offset += items.length;
+
+          if (processItems(items)) {
+            this.updatePlaylistCacheWithTrack(playlistId, aggregatedUris, aggregatedIds, false);
+            this.updatePlaylistCacheWithTrack(playlistId, candidateUris, candidateIds, false);
+            return true;
+          }
+
+          if (items.length < limit) {
+            break;
+          }
+        } catch (error) {
+          complete = false;
+          break;
+        }
+      }
+
+      if (complete) {
+        this.replacePlaylistCacheEntry(playlistId, aggregatedUris, aggregatedIds, lastFetched < limit);
+      } else {
+        this.updatePlaylistCacheWithTrack(playlistId, aggregatedUris, aggregatedIds, false);
+      }
+
+      return false;
+    }
+
+    const remainingOffsets: number[] = [];
+    for (let next = limit; next < total; next += limit) {
+      remainingOffsets.push(next);
+    }
+
+    if (remainingOffsets.length === 0) {
+      this.replacePlaylistCacheEntry(playlistId, aggregatedUris, aggregatedIds, true);
+      return false;
+    }
+
+    const concurrency = Math.min(5, remainingOffsets.length);
+    let found = false;
+    let encounteredError = false;
+
+    const runWorker = async () => {
+      while (!found) {
+        const nextOffset = remainingOffsets.shift();
+        if (nextOffset === undefined) {
+          break;
+        }
+
+        let page: any;
+        try {
+          page = await fetchPage(nextOffset);
+        } catch (error) {
+          encounteredError = true;
+          this.debug('scanPlaylistForTrack:pageError', { playlistId, offset: nextOffset, error });
+          return;
+        }
+
+        const items = Array.isArray(page?.items) ? page.items : [];
+        this.debug('scanPlaylistForTrack:page', { playlistId, offset: nextOffset, items: items.length });
+        if (processItems(items)) {
+          this.debug('scanPlaylistForTrack:matchInPage', { playlistId, offset: nextOffset });
+          found = true;
+          return;
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
+
+    if (found) {
+      this.updatePlaylistCacheWithTrack(playlistId, aggregatedUris, aggregatedIds, false);
+      this.updatePlaylistCacheWithTrack(playlistId, candidateUris, candidateIds, false);
+      return true;
+    }
+
+    if (encounteredError) {
+      this.updatePlaylistCacheWithTrack(playlistId, aggregatedUris, aggregatedIds, false);
+    } else {
+      this.replacePlaylistCacheEntry(playlistId, aggregatedUris, aggregatedIds, true);
+    }
+
+    this.debug('scanPlaylistForTrack:completed', {
+      playlistId,
+      found,
+      encounteredError,
+      aggregatedUriCount: aggregatedUris.size,
+      aggregatedIdCount: aggregatedIds.size,
+    });
+
+    return false;
+  }
+
   async getUserPlaylists(): Promise<PlaylistInfo[]> {
     const now = Date.now();
     if (this.playlistCache.size > 0 && (now - this.lastCacheUpdate) < this.cacheExpiry) {
       return Array.from(this.playlistCache.values());
     }
 
-    // Get current user info for filtering (non-blocking)
     let currentUser;
     try {
       currentUser = await this.getCurrentUser();
@@ -287,7 +658,6 @@ export class PlaylistManager {
       currentUser = null;
     }
 
-    // Try multiple endpoints to get playlists
     const endpoints = [
       { url: 'sp://core-playlist/v1/rootlist', type: 'rootlist' },
       { url: 'https://api.spotify.com/v1/me/playlists?limit=50', type: 'webapi' },
@@ -308,28 +678,25 @@ export class PlaylistManager {
           allPlaylists = this.parsePlaylistResponse(response, endpoint);
         }
         
-        // Filter to only user-owned playlists
         const userPlaylists = allPlaylists.filter(playlist => {
           return this.isUserOwnedPlaylist(playlist, currentUser);
         });
-        
+
         if (userPlaylists.length > 0) {
-          // Update cache
           this.playlistCache.clear();
           userPlaylists.forEach(playlist => {
             this.playlistCache.set(playlist.id, playlist);
           });
           this.lastCacheUpdate = now;
-          
+
           return userPlaylists;
         }
         
       } catch (error) {
-        continue; // Try next endpoint
+        continue;
       }
     }
-    
-    // If all endpoints failed
+
     this.clearCache();
     throw new Error('Failed to fetch playlists from all available endpoints.');
   }
@@ -559,6 +926,7 @@ export class PlaylistManager {
    */
   clearCache(): void {
     this.playlistCache.clear();
+    this.playlistTrackCache.clear();
     this.lastCacheUpdate = 0;
   }
 }

@@ -2,3 +2,7 @@ node_modules/
 dist/
 src/user.txt
 helper/node_modules/
+playlistmenu_section.txt
+react_components.html
+restore_isTrackInPlaylist.txt
+.serena/
