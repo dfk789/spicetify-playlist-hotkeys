@@ -115,26 +115,84 @@ export class PlaylistManager {
    * Check if a track is already in a playlist
    */
   private async isTrackInPlaylist(trackUri: string, playlistId: string): Promise<boolean> {
-    try {
-      const response = await Spicetify.CosmosAsync.get(
-        `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
-        undefined,
-        { 
-          'fields': 'items(track(uri))',
-          'limit': '50' 
-        }
-      );
+    const targetTrackId = this.extractTrackId(trackUri);
+    const limit = 100;
 
-      if (!response || !response.items) {
+    let offset = 0;
+
+    while (true) {
+      // Walk playlist pages to catch tracks beyond the first batch.
+      const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?offset=${offset}&limit=${limit}`;
+
+      let response: any;
+      try {
+        response = await Spicetify.CosmosAsync.get(url);
+      } catch (error) {
         return false;
       }
 
-      return response.items.some((item: any) => item.track?.uri === trackUri);
-    } catch (error) {
-      return false;
-    }
-  }
+      const items = Array.isArray(response?.items) ? response.items : [];
+      for (const item of items) {
+        const track = item?.track;
+        if (!track) {
+          continue;
+        }
 
+        const candidateUris = [
+          track.uri,
+          track.linked_from?.uri
+        ].filter(Boolean) as string[];
+
+        if (candidateUris.includes(trackUri)) {
+          return true;
+        }
+
+        if (!targetTrackId) {
+          continue;
+        }
+
+        const candidateIds = new Set<string>();
+
+        if (typeof track.id === 'string') {
+          candidateIds.add(track.id);
+        }
+
+        const linkedFromId = track.linked_from?.id;
+        if (typeof linkedFromId === 'string') {
+          candidateIds.add(linkedFromId);
+        }
+
+        for (const candidate of candidateUris) {
+          const candidateId = this.extractTrackId(candidate);
+          if (candidateId) {
+            candidateIds.add(candidateId);
+          }
+        }
+
+        if (candidateIds.has(targetTrackId)) {
+          return true;
+        }
+      }
+
+      const fetchedCount = items.length;
+      if (fetchedCount === 0) {
+        break;
+      }
+
+      offset += fetchedCount;
+
+      const total = typeof response?.total === 'number' ? response.total : undefined;
+      if (typeof total === 'number' && offset >= total) {
+        break;
+      }
+
+      if (fetchedCount < limit) {
+        break;
+      }
+    }
+
+    return false;
+  }
   /**
    * Get all user playlists with multiple endpoint fallbacks and pagination
    */

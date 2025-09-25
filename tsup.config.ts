@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/extension.ts'],
+  entry: { 'hotkey-playlist': 'src/extension.ts' },
   format: ['iife'],
   outDir: 'dist',
   outExtension: () => ({ js: '.js' }),
