@@ -111,67 +111,143 @@ export class PlaylistManager {
     }
   }
 
+  private async getTrackIdCandidates(trackUri: string): Promise<string[]> {
+    if (!trackUri || !trackUri.startsWith('spotify:track:')) {
+      return [];
+    }
+
+    const baseId = this.extractTrackId(trackUri);
+    if (!baseId) {
+      return [];
+    }
+
+    const ids = new Set<string>([baseId]);
+
+    try {
+      const trackResponse = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${baseId}`);
+
+      const linkedFrom = trackResponse?.linked_from;
+      const linkedFromId = typeof linkedFrom?.id === 'string' ? linkedFrom.id : undefined;
+      const linkedFromUri = typeof linkedFrom?.uri === 'string' ? linkedFrom.uri : undefined;
+
+      if (linkedFromId) {
+        ids.add(linkedFromId);
+      }
+
+      if (linkedFromUri) {
+        const linkedId = this.extractTrackId(linkedFromUri);
+        if (linkedId) {
+          ids.add(linkedId);
+        }
+      }
+    } catch (error) {
+      // Ignore lookup failures and fall back to the base track ID.
+    }
+
+    return Array.from(ids);
+  }
+
   /**
    * Check if a track is already in a playlist
    */
   private async isTrackInPlaylist(trackUri: string, playlistId: string): Promise<boolean> {
+    const candidateIds = await this.getTrackIdCandidates(trackUri);
     const targetTrackId = this.extractTrackId(trackUri);
-    const limit = 100;
 
+    const idSet = new Set<string>(candidateIds);
+    const isSpotifyTrack = trackUri.startsWith('spotify:track:');
+    if (isSpotifyTrack && targetTrackId) {
+      idSet.add(targetTrackId);
+    }
+
+    const idList = isSpotifyTrack ? Array.from(idSet) : [];
+    const batchSize = 50;
+    let containsCheckSucceeded = idList.length > 0;
+
+    for (let i = 0; i < idList.length; i += batchSize) {
+      const batch = idList.slice(i, i + batchSize);
+      const containsParams = new URLSearchParams({ ids: batch.join(',') });
+
+      try {
+        const response = await Spicetify.CosmosAsync.get(
+          `https://api.spotify.com/v1/playlists/${playlistId}/tracks/contains?${containsParams.toString()}`
+        );
+
+        if (!Array.isArray(response)) {
+          containsCheckSucceeded = false;
+          break;
+        }
+
+        if (response.some(Boolean)) {
+          return true;
+        }
+      } catch (error) {
+        containsCheckSucceeded = false;
+        break;
+      }
+    }
+
+    if (containsCheckSucceeded && idList.length > 0) {
+      return false;
+    }
+
+    const limit = 100;
     let offset = 0;
 
     while (true) {
-      // Walk playlist pages to catch tracks beyond the first batch.
-      const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?offset=${offset}&limit=${limit}`;
+      const pageParams = new URLSearchParams({
+        fields: 'items(track(uri,id,linked_from(uri,id))),total',
+        limit: limit.toString(),
+        offset: offset.toString(),
+      });
 
       let response: any;
       try {
-        response = await Spicetify.CosmosAsync.get(url);
+        response = await Spicetify.CosmosAsync.get(
+          `https://api.spotify.com/v1/playlists/${playlistId}/tracks?${pageParams.toString()}`
+        );
       } catch (error) {
         return false;
       }
 
       const items = Array.isArray(response?.items) ? response.items : [];
-      for (const item of items) {
+      const found = items.some((item: any) => {
         const track = item?.track;
         if (!track) {
-          continue;
+          return false;
         }
 
-        const candidateUris = [
-          track.uri,
-          track.linked_from?.uri
-        ].filter(Boolean) as string[];
-
+        const candidateUris = [track.uri, track.linked_from?.uri].filter(Boolean) as string[];
         if (candidateUris.includes(trackUri)) {
           return true;
         }
 
-        if (!targetTrackId) {
-          continue;
+        const idsInPlaylist = new Set<string>();
+        if (typeof track.id === 'string' && track.id) {
+          idsInPlaylist.add(track.id);
+        }
+        if (typeof track.linked_from?.id === 'string' && track.linked_from.id) {
+          idsInPlaylist.add(track.linked_from.id);
         }
 
-        const candidateIds = new Set<string>();
-
-        if (typeof track.id === 'string') {
-          candidateIds.add(track.id);
-        }
-
-        const linkedFromId = track.linked_from?.id;
-        if (typeof linkedFromId === 'string') {
-          candidateIds.add(linkedFromId);
-        }
-
-        for (const candidate of candidateUris) {
-          const candidateId = this.extractTrackId(candidate);
+        for (const uri of candidateUris) {
+          const candidateId = this.extractTrackId(uri);
           if (candidateId) {
-            candidateIds.add(candidateId);
+            idsInPlaylist.add(candidateId);
           }
         }
 
-        if (candidateIds.has(targetTrackId)) {
-          return true;
+        for (const id of idsInPlaylist) {
+          if (idSet.has(id)) {
+            return true;
+          }
         }
+
+        return false;
+      });
+
+      if (found) {
+        return true;
       }
 
       const fetchedCount = items.length;
@@ -193,6 +269,7 @@ export class PlaylistManager {
 
     return false;
   }
+
   /**
    * Get all user playlists with multiple endpoint fallbacks and pagination
    */
