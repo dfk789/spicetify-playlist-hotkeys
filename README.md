@@ -31,8 +31,8 @@ Add currently playing tracks to playlists with customizable hotkeys. Press a key
    # Find your extensions folder
    spicetify path
    
-   # Copy the built file (rename as needed)
-   cp dist/extension.js ~/.config/spicetify/Extensions/playlist-hotkeys.js
+   # Copy the built file
+   cp dist/playlist-hotkeys.js ~/.config/spicetify/Extensions/playlist-hotkeys.js
    
    # Enable the extension
    spicetify config extensions playlist-hotkeys.js
