@@ -5,6 +5,7 @@
 
 import { PlaylistManager } from './playlists';
 import { HotkeyManager } from './hotkeys';
+import hkPlaylistIcon from './hk-playlist-icon.svg?raw';
 
 interface HotkeyMapping {
   combo: string;
@@ -167,30 +168,66 @@ export class SettingsUI {
   
   private createButton(): HTMLButtonElement {
     const button = document.createElement('button');
-    button.innerText = 'HK';
-    button.className = 'Button-buttonTertiary-textBrightAccent-small-iconOnly-useBrowserDefaultFocusStyle-condensed playlist-hotkeys-settings-btn';
+    button.className =
+      'Button-buttonTertiary-textBrightAccent-small-iconOnly-useBrowserDefaultFocusStyle-condensed playlist-hotkeys-settings-btn';
     button.title = 'Configure Playlist Hotkeys';
-    button.style.cssText = `
-      min-inline-size: 24px !important;
-      min-block-size: 24px !important;
-      padding-inline: 6px !important;
-      padding-block: 4px !important;
-      font-size: 9px !important;
-      font-weight: bold !important;
-      margin-inline-start: 6px !important;
-      background-color: transparent !important;
-      color: var(--text-bright-accent, #107434) !important;
-      box-shadow: none !important;
-      border: none !important;
-      outline: none !important;
+    button.setAttribute('aria-label', 'Configure Playlist Hotkeys');
+
+    // Spotify DOM shape: wrapper span + svg
+    button.innerHTML = `
+      <span aria-hidden="true" class="e-91000-button__icon-wrapper">
+        ${hkPlaylistIcon}
+      </span>
     `;
-    
-    button.addEventListener('click', () => {
-      this.openSettings();
-    });
-    
+
+    // Button box (keep your 40×40 look, tighten spacing)
+    button.style.cssText = `
+      inline-size: 40px;
+      margin-inline-start: 4px;
+      background-color: transparent;
+      color: var(--text-bright-accent, currentColor);
+      border: 0;
+      box-shadow: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 0;
+      transform: translateY(5px);
+    `;
+
+    // Icon: let Encore handle alignment; size via Encore vars
+    const svg = button.querySelector('svg') as SVGElement | null;
+    if (svg) {
+      svg.classList.add('e-91000-icon', 'e-91000-baseline');
+      svg.removeAttribute('width');
+      svg.removeAttribute('height');
+      if (!svg.hasAttribute('viewBox')) svg.setAttribute('viewBox', '0 0 24 24');
+
+      // Your chosen icon size via Encore vars
+      svg.style.setProperty('--encore-icon-width',  '40px');
+      svg.style.setProperty('--encore-icon-height', '40px');
+      (svg as SVGElement).style.display = 'block';
+      (svg as SVGElement).style.pointerEvents = 'none';
+
+      // 1) Disable non-scaling-stroke so strokes scale with the icon
+      svg.querySelectorAll<SVGElement>('*').forEach(el => {
+        el.style.vectorEffect = 'none';
+      });
+
+      // 2) Recalculate stroke widths for the new pixel size
+      const vb = svg.viewBox?.baseVal?.width || 24;
+      const px = parseFloat(getComputedStyle(svg).width);
+      const scale = px / vb;                             // e.g. 40/24 ≈ 1.67
+      svg.querySelectorAll<SVGElement>('[stroke]').forEach(el => {
+        const base = parseFloat(el.getAttribute('stroke-width') || '1.6'); // your SVG used ~1.6
+        el.style.setProperty('stroke-width', `${(base * scale).toFixed(2)}px`, 'important');
+      });
+    }
+
+    button.addEventListener('click', () => this.openSettings());
     return button;
   }
+
 
   private async openSettings(): Promise<void> {
     if (this.settingsModal) {
