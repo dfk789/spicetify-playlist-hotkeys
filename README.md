@@ -8,7 +8,7 @@ Add currently playing tracks to playlists with customizable hotkeys. Press a key
 - Multiple playlists: add to several at once
 - Auto-like: likes tracks when adding to playlists
 - Global hotkeys: works in background via local helper script (must be run separately)
-- Instant feedback: toast notifications
+- Feedback: toast notifications
 
 ## Installation
 
