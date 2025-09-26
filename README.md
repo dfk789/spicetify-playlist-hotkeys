@@ -41,14 +41,14 @@ Add currently playing tracks to playlists with customizable hotkeys. Press a key
 
 3. Verify it works:
    - Open Spotify
-   - Look for the "HK" button in the bottom playbar
+   - Look for the playlist hotkeys icon in the bottom playbar next to the playlist icon.
    - Click it to open settings
 
 ## Usage
 
 ### Setting Up Hotkeys
 
-1. Click the "HK" button in the bottom playbar
+1. Click the "Playlist hotkeys icon" button in the bottom playbar
 2. Click "Add New Mapping"
 3. Click in the hotkey field and press your desired key combination
 4. Type to search and select playlists
@@ -88,7 +88,9 @@ Notes:
 There is a Node/JS variant in `helper/`, but it is not reliable yet and is currently deferred. Use the Python helper.
 
 ### Configure in the extension
-- Open settings (HK button) and enable "Global hotkeys".
+- Open settings (Playlist htokeys icon) and enable "Global hotkeys".
+
+![Demo showing the playlist hotkeys in action](./demo.gif)
 
 ## Platform Notes
 - macOS: grant Accessibility permission to your terminal/python process on first run. (Not tested)
