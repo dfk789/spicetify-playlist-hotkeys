@@ -1,0 +1,1 @@
+python "F:\Projects\spicetify-playlist-hotkeys\helper\helper.py"
