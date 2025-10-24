@@ -4,7 +4,8 @@
   "description": "Spicetify extension to add hotkeys for adding current track to specific playlists",
   "main": "index.js",
   "scripts": {
-    "build": "tsup"
+    "build": "tsup",
+    "build:test": "tsup --config tsup.test.config.ts"
   },
   "keywords": [],
   "author": "",
