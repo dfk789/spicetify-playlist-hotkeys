@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build": "tsup",
-    "build:test": "tsup --config tsup.test.config.ts"
+    "build:test": "tsup --config tsup.test.config.ts",
+    "build:benchmark": "tsup --config tsup.benchmark.config.ts"
   },
   "keywords": [],
   "author": "",
