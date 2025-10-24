@@ -1,4 +1,20 @@
-const HELPER_ORIGIN = "http://127.0.0.1:17976";
+/**
+ * Hotkey Manager - Refactored for Phase 1
+ *
+ * Simplified hotkey management using official Spicetify APIs:
+ * - Focused mode: Spicetify.Keyboard.registerShortcut()
+ * - Global mode: HelperConnection module
+ *
+ * Key improvements:
+ * - Reduced complexity (~200 lines vs 377)
+ * - Uses official Spicetify.Keyboard API
+ * - Input field protection
+ * - Helper logic extracted to separate module
+ * - Execution locks retained (working well)
+ */
+
+import { HelperConnection } from './helperConnection';
+import { normalizeCombo, shouldIgnoreEvent } from './comboUtils';
 
 type HotkeyCallback = () => void | Promise<void>;
 
@@ -6,196 +22,181 @@ interface HotkeyRegistration {
   combo: string;
   normalizedCombo: string;
   callback: HotkeyCallback;
+  spicetifyUnregister?: () => void; // Cleanup function from Spicetify.Keyboard
 }
 
 export class HotkeyManager {
   private registrations: Map<string, HotkeyRegistration> = new Map();
-  private globalRegistrations: Map<string, HotkeyRegistration> = new Map();
-  private isListening = false;
+  private helperConnection: HelperConnection;
   private globalHotkeysEnabled = false;
 
-  private helperToken: string | null = null;
-  private helperES: EventSource | null = null;
-  private helperAvailable = false;
-  private helperReady = false;
-  private helperSyncDebounce?: number;
-  private helperRetryTimer?: number;
-
+  // Execution locks prevent duplicate triggers
   private executionLocks: Map<string, boolean> = new Map();
   private lockTimeout = 500;
 
   constructor() {
-    this.handleKeydown = this.handleKeydown.bind(this);
+    this.helperConnection = new HelperConnection();
   }
 
+  /**
+   * Register a hotkey
+   *
+   * @param combo - Key combination (e.g., "ctrl+1", "shift+a")
+   * @param callback - Function to execute when hotkey is triggered
+   * @param isGlobal - If true, register with helper for OS-level capture
+   */
   register(combo: string, callback: HotkeyCallback, isGlobal: boolean = false): void {
-    const normalizedCombo = this.normalizeCombo(combo);
-    
+    const normalizedCombo = normalizeCombo(combo);
+
     const registration: HotkeyRegistration = {
       combo,
       normalizedCombo,
-      callback
+      callback,
     };
 
-    if (isGlobal && this.globalHotkeysEnabled) {
-      this.globalRegistrations.set(normalizedCombo, registration);
+    // Register for focused mode using Spicetify.Keyboard
+    if (this.canUseSpicetifyKeyboard()) {
+      try {
+        // Wrap callback with protection and locks
+        const wrappedCallback = async (event: KeyboardEvent) => {
+          // Input field protection (from Power Bar pattern)
+          if (shouldIgnoreEvent(event)) return;
 
-      this.ensureHelper().then((ok) => {
-        if (ok) {
-          this.startHelperEvents();
-          void this.syncGlobalHelperCombos();
-        }
-      });
-    }
-    
-    this.registrations.set(normalizedCombo, registration);
+          // Execution lock
+          if (!this.acquireLock(normalizedCombo)) return;
 
-    if (!this.isListening) {
-      this.startListening();
-    }
-  }
+          try {
+            await callback();
+          } catch (error) {
+            console.error('[HotkeyManager] Callback error:', error);
+          } finally {
+            this.releaseLock(normalizedCombo);
+          }
+        };
 
-  unregister(combo: string): void {
-    const normalizedCombo = this.normalizeCombo(combo);
-    this.registrations.delete(normalizedCombo);
-    
-    if (this.registrations.size === 0) {
-      this.stopListening();
-    }
-  }
+        Spicetify.Keyboard.registerShortcut(normalizedCombo, wrappedCallback);
 
-  clearAll(): void {
-    this.registrations.clear();
-    this.globalRegistrations.clear();
-    this.stopListening();
-    this.stopHelperEvents();
-    this.stopHelperRetry();
-  }
+        // Store registration
+        this.registrations.set(normalizedCombo, registration);
 
-  setGlobalHotkeysEnabled(enabled: boolean): void {
-    this.globalHotkeysEnabled = enabled;
-
-    if (enabled) {
-      this.ensureHelper().then((ok) => {
-        if (ok) {
-          this.stopHelperRetry();
-          this.startHelperEvents();
-          void this.syncGlobalHelperCombos();
-        } else {
-          this.startHelperRetry();
-        }
-      });
+        console.log(`[HotkeyManager] Registered focused shortcut: ${normalizedCombo}`);
+      } catch (error) {
+        console.error(`[HotkeyManager] Failed to register shortcut ${normalizedCombo}:`, error);
+      }
     } else {
-      this.stopHelperEvents();
-      this.stopHelperRetry();
+      console.warn('[HotkeyManager] Spicetify.Keyboard not available');
+    }
+
+    // Register for global mode using helper
+    if (isGlobal && this.globalHotkeysEnabled) {
+      // Wrap callback with execution lock
+      const wrappedCallback = async () => {
+        if (!this.acquireLock(normalizedCombo)) return;
+
+        try {
+          await callback();
+        } catch (error) {
+          console.error('[HotkeyManager] Global callback error:', error);
+        } finally {
+          this.releaseLock(normalizedCombo);
+        }
+      };
+
+      this.helperConnection.registerCombo(normalizedCombo, wrappedCallback);
+      console.log(`[HotkeyManager] Registered global shortcut: ${normalizedCombo}`);
     }
   }
 
-  private startListening(): void {
-    if (this.isListening) return;
-    
-    document.addEventListener('keydown', this.handleKeydown, true);
-    this.isListening = true;
-  }
-
-  private stopListening(): void {
-    if (!this.isListening) return;
-    
-    document.removeEventListener('keydown', this.handleKeydown, true);
-    this.isListening = false;
-  }
-
-  private async handleKeydown(event: KeyboardEvent): Promise<void> {
-    const combo = this.buildComboFromEvent(event);
-    const registration = this.registrations.get(combo);
+  /**
+   * Unregister a hotkey
+   */
+  unregister(combo: string): void {
+    const normalizedCombo = normalizeCombo(combo);
+    const registration = this.registrations.get(normalizedCombo);
 
     if (registration) {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!this.acquireLock(combo)) {
-        return;
+      // Unregister from Spicetify.Keyboard
+      if (this.canUseSpicetifyKeyboard()) {
+        try {
+          Spicetify.Keyboard._deregisterShortcut(normalizedCombo);
+        } catch (error) {
+          console.error('[HotkeyManager] Failed to deregister:', error);
+        }
       }
 
-      try {
-        await registration.callback();
-      } catch (error) {
-        console.error('Hotkey callback error:', error);
-      } finally {
-        this.releaseLock(combo);
+      // Unregister from helper
+      this.helperConnection.unregisterCombo(normalizedCombo);
+
+      this.registrations.delete(normalizedCombo);
+      console.log(`[HotkeyManager] Unregistered: ${normalizedCombo}`);
+    }
+  }
+
+  /**
+   * Clear all registered hotkeys
+   */
+  clearAll(): void {
+    // Unregister all from Spicetify.Keyboard
+    if (this.canUseSpicetifyKeyboard()) {
+      for (const normalizedCombo of this.registrations.keys()) {
+        try {
+          Spicetify.Keyboard._deregisterShortcut(normalizedCombo);
+        } catch (error) {
+          // Ignore errors during cleanup
+        }
       }
     }
+
+    // Clear helper
+    this.helperConnection.clearAllCombos();
+
+    this.registrations.clear();
+    console.log('[HotkeyManager] All shortcuts cleared');
   }
 
-  private buildComboFromEvent(event: KeyboardEvent): string {
-    const parts: string[] = [];
-    
-    if (event.ctrlKey || event.metaKey) parts.push('Ctrl');
-    if (event.altKey) parts.push('Alt');  
-    if (event.shiftKey) parts.push('Shift');
-    
-    const key = this.normalizeKey(event.key);
-    if (key && !['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) {
-      parts.push(key);
-    }
-    
-    return parts.join('+');
+  /**
+   * Enable or disable global hotkeys (helper-based)
+   */
+  async setGlobalHotkeysEnabled(enabled: boolean): Promise<void> {
+    this.globalHotkeysEnabled = enabled;
+    await this.helperConnection.setEnabled(enabled);
+
+    console.log(`[HotkeyManager] Global hotkeys ${enabled ? 'enabled' : 'disabled'}`);
   }
 
-  private normalizeCombo(combo: string): string {
-    return combo
-      .split('+')
-      .map(part => part.trim())
-      .map(part => this.normalizeModifier(part))
-      .sort((a, b) => {
-        const order = ['Ctrl', 'Alt', 'Shift'];
-        const aIndex = order.indexOf(a);
-        const bIndex = order.indexOf(b);
-        
-        if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-        if (aIndex !== -1) return -1;
-        if (bIndex !== -1) return 1;
-        return a.localeCompare(b);
-      })
-      .join('+');
-  }
-
-  private normalizeModifier(modifier: string): string {
-    const normalized = modifier.toLowerCase();
-    
-    switch (normalized) {
-      case 'ctrl':
-      case 'control': 
-      case 'cmd':
-      case 'command':
-        return 'Ctrl';
-      case 'alt':
-      case 'option':
-        return 'Alt';
-      case 'shift':
-        return 'Shift';
-      default:
-        return this.normalizeKey(modifier);
+  /**
+   * Re-sync global hotkeys with helper
+   * Call this after registration changes when global mode is active
+   */
+  async syncGlobalHelperCombos(): Promise<void> {
+    if (this.globalHotkeysEnabled) {
+      await this.helperConnection.syncCombos();
     }
   }
 
-  private normalizeKey(key: string): string {
-    if (key.length === 1) {
-      return key.toUpperCase();
-    }
-
-    const keyMap: Record<string, string> = {
-      'ArrowUp': 'Up',
-      'ArrowDown': 'Down',
-      'ArrowLeft': 'Left',
-      'ArrowRight': 'Right',
-      ' ': 'Space'
-    };
-
-    return keyMap[key] || key;
+  /**
+   * Get helper connection status
+   */
+  getHelperStatus() {
+    return this.helperConnection.getStatus();
   }
 
-  // Execution lock methods to prevent double triggers
+  /**
+   * Check helper availability manually
+   */
+  async checkHelper(): Promise<boolean> {
+    return await this.helperConnection.ensureConnection();
+  }
+
+  /**
+   * Get all registered hotkeys
+   */
+  getRegistrations(): HotkeyRegistration[] {
+    return Array.from(this.registrations.values());
+  }
+
+  // Execution lock methods (unchanged - working well)
+
   private acquireLock(combo: string): boolean {
     if (this.executionLocks.get(combo)) {
       return false;
@@ -213,164 +214,9 @@ export class HotkeyManager {
     this.executionLocks.delete(combo);
   }
 
-  getRegistrations(): HotkeyRegistration[] {
-    return Array.from(this.registrations.values());
-  }
+  // Utility methods
 
-  // All global hotkey functionality is now handled by the helper script
-  // No Electron methods needed
-
-  // Helper client methods
-  private async ensureHelper(): Promise<boolean> {
-    if (this.helperAvailable && this.helperToken) return true;
-    try {
-      const res = await fetch(`${HELPER_ORIGIN}/hello`, {
-        method: "GET",
-        signal: AbortSignal.timeout(2000)
-      });
-      if (!res.ok) return false;
-      const j = await res.json();
-      this.helperToken = String(j.token || "");
-      this.helperAvailable = !!this.helperToken;
-      if (this.helperAvailable) {
-        console.log('?? Global hotkey helper connected');
-      }
-      return this.helperAvailable;
-    } catch (error: any) {
-      this.helperAvailable = false;
-      this.helperToken = null;
-      return false;
-    }
-  }
-
-  private startHelperEvents(): void {
-    if (!this.helperAvailable || this.helperES) return;
-    try {
-      const tokenParam = this.helperToken ? `?token=${encodeURIComponent(this.helperToken)}` : "";
-      const es = new EventSource(`${HELPER_ORIGIN}/events${tokenParam}`);
-      es.onmessage = async (ev) => {
-        try {
-          const msg = JSON.parse(ev.data);
-
-          if (msg.ready) {
-            this.helperReady = true;
-            void this.syncGlobalHelperCombos();
-            return;
-          }
-          if (msg.combo) {
-            const normalized = this.normalizeCombo(String(msg.combo));
-            const reg = this.globalRegistrations.get(normalized);
-            if (reg) {
-              if (!this.acquireLock(normalized)) {
-                return;
-              }
-
-              try {
-                await reg.callback();
-              } catch (err) {
-                console.error("Global hotkey helper callback error:", err);
-              } finally {
-                this.releaseLock(normalized);
-              }
-            }
-          }
-        } catch (e) {
-          console.error('Helper message parse error:', e);
-        }
-      };
-      es.onerror = () => {
-        try { es.close(); } catch {}
-        this.helperES = null;
-        this.helperReady = false;
-        this.helperAvailable = false;
-        this.helperToken = null;
-        this.startHelperRetry();
-      };
-      this.helperES = es;
-    } catch (e) {
-      console.warn("Failed to open helper SSE:", e);
-    }
-  }
-
-  private stopHelperEvents(): void {
-    if (this.helperES) {
-      this.helperES.close();
-      this.helperES = null;
-    }
-    this.helperReady = false;
-  }
-
-  public async syncGlobalHelperCombos(): Promise<void> {
-    if (!this.helperAvailable || !this.helperToken || !this.globalHotkeysEnabled) {
-      return;
-    }
-    if (!this.helperReady) {
-      return;
-    }
-
-    const combos = Array.from(this.globalRegistrations.keys());
-    const body = { combos };
-    const headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${this.helperToken}`,
-    };
-
-    try {
-      if (this.helperSyncDebounce) window.clearTimeout(this.helperSyncDebounce);
-      this.helperSyncDebounce = window.setTimeout(async () => {
-        try {
-          const response = await fetch(`${HELPER_ORIGIN}/config`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(body)
-          });
-
-          if (!response.ok) {
-            console.error('Helper config failed:', response.status, response.statusText);
-          }
-        } catch (e) {
-          console.error('Helper config error:', e);
-        }
-      }, 200);
-    } catch (e) {
-      console.warn("Failed to sync combos to helper:", e);
-    }
-  }
-
-  private startHelperRetry(): void {
-    if (this.helperRetryTimer) return;
-    const attempt = async () => {
-      if (!this.globalHotkeysEnabled) {
-        this.stopHelperRetry();
-        return;
-      }
-      const ok = await this.ensureHelper();
-      if (ok) {
-        this.stopHelperRetry();
-        this.startHelperEvents();
-        void this.syncGlobalHelperCombos();
-      }
-    };
-    void attempt();
-    this.helperRetryTimer = window.setInterval(attempt, 3000);
-  }
-
-  private stopHelperRetry(): void {
-    if (this.helperRetryTimer) {
-      window.clearInterval(this.helperRetryTimer);
-      this.helperRetryTimer = undefined;
-    }
-  }
-
-  public getHelperStatus(): { available: boolean; ready: boolean; connected: boolean } {
-    return {
-      available: this.helperAvailable,
-      ready: this.helperReady,
-      connected: !!this.helperES
-    };
-  }
-
-  public async checkHelper(): Promise<boolean> {
-    return await this.ensureHelper();
+  private canUseSpicetifyKeyboard(): boolean {
+    return typeof Spicetify?.Keyboard?.registerShortcut === 'function';
   }
 }
