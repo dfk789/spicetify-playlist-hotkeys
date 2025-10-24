@@ -5,7 +5,7 @@
 
 import { PlaylistManager } from './playlists';
 import { HotkeyManager } from './hotkeys';
-import hkPlaylistIcon from './hk-playlist-icon.svg?raw';
+import { hkPlaylistIcon } from './icon';
 
 interface HotkeyMapping {
   combo: string;

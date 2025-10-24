@@ -1,0 +1,31 @@
+/**
+ * Playlist Hotkeys Icon - SVG as string for Spicetify Creator compatibility
+ */
+
+export const hkPlaylistIcon = `
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="Playlist hotkeys">
+  <title>Playlist Hotkeys</title>
+
+  <!-- Playlist items: three bullets + lines with reduced vertical spacing; lines extend under keycap for overlap -->
+  <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- lines stop before the keycap (keycap left edge at x=11) -->
+    <path d="M3.5 5h4.3"/>
+
+    <path d="M3.5 9h4.3"/>
+
+    <path d="M3.5 13h10.5"/>
+  </g>
+
+  <!-- Keycap on the right -->
+  <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Keycap moved further left and a bit higher; made slimmer (width=6) -->
+    <rect x="8.3" y="4.6" width="6" height="6" rx="1.2"/>
+
+    <!-- Mini key-grid inside the keycap (2x2 small keys), positioned relative to new keycap location -->
+    <rect x="9.5" y="5.8" width="1.5" height="1.5" rx="0.3" fill="currentColor" stroke="none"/>
+    <rect x="11.5" y="5.8" width="1.5" height="1.5" rx="0.3" fill="currentColor" stroke="none"/>
+    <rect x="9.5" y="7.6" width="1.5" height="1.5" rx="0.3" fill="currentColor" stroke="none"/>
+    <rect x="11.5" y="7.6" width="1.5" height="1.5" rx="0.3" fill="currentColor" stroke="none"/>
+  </g>
+</svg>
+`.trim();
