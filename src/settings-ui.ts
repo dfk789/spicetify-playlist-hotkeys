@@ -320,7 +320,7 @@ export class SettingsUI {
 
   private renderSettingsHTML(playlists: PlaylistInfo[]): string {
     console.log(`Rendering settings HTML with ${playlists.length} playlists:`, playlists);
-    
+
     const playlistOptions = playlists
       .map(p => {
         console.log(`Creating option for playlist: ${p.name} (${p.id})`);
@@ -336,23 +336,18 @@ export class SettingsUI {
 
     return `
       <h2>Playlist Hotkeys Settings</h2>
-      
-      <div style="margin-bottom: 20px; padding: 8px; background: var(--spice-main); border-radius: 4px; font-size: 12px; color: var(--spice-subtext);">
-        <strong>Debug Info:</strong> Found ${playlists.length} playlist(s).
-        ${playlists.length === 0 ? 'If you have playlists in Spotify but none are showing here, check the browser console (F12) for error details.' : ''}
-      </div>
-      
+
+      ${this.renderHelperStatusBanner()}
+
       <div style="margin-bottom: 20px;">
-        <label>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
           <input type="checkbox" id="global-mode" ${this.config.globalMode ? 'checked' : ''}>
-          Enable Global Hotkeys (works when Spotify is in background)
+          <span style="font-weight: 500;">Enable Global Hotkeys</span>
         </label>
-        <div style="font-size: 12px; color: var(--spice-subtext); margin-top: 4px;">
-          ${this.getGlobalHotkeyStatusText()}
+        <div style="font-size: 12px; color: var(--spice-subtext); margin-top: 8px; line-height: 1.5;">
+          ${this.getModeExplanationText()}
         </div>
       </div>
-
-      <!-- Helper settings simplified: rely on single status above. -->
 
       <h3>Hotkey Mappings</h3>
       <div id="mappings-container">
@@ -788,18 +783,121 @@ export class SettingsUI {
     document.querySelectorAll('.active-search-input').forEach(el => el.classList.remove('active-search-input'));
   }
 
-  private getGlobalHotkeyStatusText(): string {
-    if (!this.config.globalMode) {
-      return '⚠️ Global hotkeys disabled';
-    }
-    
+  /**
+   * Render helper status banner with color-coded indicators
+   */
+  private renderHelperStatusBanner(): string {
     const status = this.hotkeyManager.getHelperStatus();
-    if (status.available && status.ready) {
-      return '✅ Global hotkeys active via helper';
-    } else if (status.available) {
-      return '🔄 Helper found, connecting...';
+    const isGlobalMode = this.config.globalMode;
+
+    // Determine status color and message
+    let bgColor: string;
+    let borderColor: string;
+    let icon: string;
+    let title: string;
+    let message: string;
+    let showOnboarding = false;
+
+    if (!isGlobalMode) {
+      // Focused mode
+      bgColor = 'rgba(33, 150, 243, 0.1)';
+      borderColor = '#2196F3';
+      icon = '⌨️';
+      title = 'Focused Mode';
+      message = 'Hotkeys work only when Spotify is the active window.';
+    } else if (status.available && status.ready) {
+      // Global mode - connected
+      bgColor = 'rgba(76, 175, 80, 0.1)';
+      borderColor = '#4CAF50';
+      icon = '✅';
+      title = 'Global Mode Active';
+      message = 'Helper connected. Hotkeys work even when Spotify is in the background.';
+    } else if (status.available && !status.ready) {
+      // Global mode - connecting
+      bgColor = 'rgba(255, 152, 0, 0.1)';
+      borderColor = '#FF9800';
+      icon = '🔄';
+      title = 'Connecting to Helper';
+      message = 'Helper found, establishing connection...';
     } else {
-      return '🔴 Helper not running - start helper (python or standalone)';
+      // Global mode - helper not available
+      bgColor = 'rgba(244, 67, 54, 0.1)';
+      borderColor = '#F44336';
+      icon = '🔴';
+      title = 'Helper Not Running';
+      message = 'Global hotkeys require the helper script. Start the helper to enable system-wide hotkeys.';
+      showOnboarding = true;
+    }
+
+    const onboardingSection = showOnboarding
+      ? `
+        <details style="margin-top: 12px; font-size: 12px;">
+          <summary style="cursor: pointer; font-weight: 500; margin-bottom: 8px;">
+            📖 How to start the helper
+          </summary>
+          <div style="padding-left: 16px; line-height: 1.6; color: var(--spice-subtext);">
+            <p style="margin: 8px 0;"><strong>Option 1: Python Script</strong></p>
+            <code style="display: block; background: var(--spice-main); padding: 8px; border-radius: 4px; margin: 4px 0;">
+              python helper/global-hotkeys.py
+            </code>
+            <p style="margin: 8px 0;"><strong>Option 2: Standalone Executable</strong></p>
+            <code style="display: block; background: var(--spice-main); padding: 8px; border-radius: 4px; margin: 4px 0;">
+              helper/global-hotkeys.exe
+            </code>
+            <p style="margin: 8px 0; font-size: 11px;">
+              The helper runs on port 17976 and enables OS-level hotkey capture.
+            </p>
+          </div>
+        </details>
+      `
+      : '';
+
+    return `
+      <div style="
+        margin-bottom: 20px;
+        padding: 16px;
+        background: ${bgColor};
+        border: 2px solid ${borderColor};
+        border-radius: 8px;
+      ">
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <span style="font-size: 24px; line-height: 1;">${icon}</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">
+              ${title}
+            </div>
+            <div style="font-size: 13px; color: var(--spice-text); opacity: 0.9;">
+              ${message}
+            </div>
+            ${onboardingSection}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Get explanation text for focused vs global mode
+   */
+  private getModeExplanationText(): string {
+    if (!this.config.globalMode) {
+      return `
+        <strong>Focused Mode:</strong> Hotkeys only work when Spotify is the active window.
+        <br>Enable global hotkeys to use shortcuts even when Spotify is in the background.
+      `;
+    } else {
+      const status = this.hotkeyManager.getHelperStatus();
+      if (status.available && status.ready) {
+        return `
+          <strong>System-Wide Mode:</strong> Hotkeys work everywhere, even when Spotify is minimized or in the background.
+          <br>The helper script is running on <code style="background: var(--spice-main); padding: 2px 6px; border-radius: 3px;">http://127.0.0.1:17976</code>
+        `;
+      } else {
+        return `
+          <strong>Global Mode Enabled:</strong> Waiting for helper connection to enable system-wide hotkeys.
+          <br>Start the helper script to unlock background hotkey functionality.
+        `;
+      }
     }
   }
 
