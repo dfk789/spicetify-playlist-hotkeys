@@ -20,16 +20,16 @@ The extension maps keyboard shortcuts to playlist actions (add current track, op
 - Two modes exist: “in-app” (when Spotify is focused) and “global” (requires helper). Both paths maintain their own logic, including execution locks to prevent rapid repeats.
 
 ### Issues
-- Extra setup friction: users must install Python/Node and run a background process.
+- Extra setup friction: users must install Python/Node and run a background process for system-wide capture.
 - Reliability: helper must be running; SSE/network could fail or be blocked by firewall/permissions.
-- Duplication: Spicetify exposes `Spicetify.Keyboard` (wrapping Mousetrap) that should provide global shortcuts, making the custom infrastructure potentially redundant.
+- Duplication: focused-only (`Spicetify.Keyboard`) logic and helper-driven global logic currently diverge, leading to redundant combo handling.
 - Maintenance burden: supporting both helper and in-app modes increases complexity.
 
 ### Recommendations
 1. **Adopt `Spicetify.Keyboard.registerShortcut`**  
-   - Register each mapping with Spicetify’s keyboard API (e.g., `Spicetify.Keyboard.registerShortcut("ctrl+1", () => addToPlaylist(...))`).  
-   - Remove `HotkeyManager.register`/`syncGlobalHelperCombos` logic if Spicetify handles combos globally.
-   - Verify that Spicetify’s shortcuts truly fire when Spotify is unfocused; documentation claims “global,” but we must test on Windows/macOS/Linux since Mousetrap normally requires focus.
+   - Register each mapping with Spicetify’s keyboard API (e.g., `Spicetify.Keyboard.registerShortcut("ctrl+1", () => addToPlaylist(...))`) for focused-only mode.  
+   - Share normalization/state management between the Spicetify path and helper path instead of maintaining separate registries.
+   - Run smoke tests on Windows/macOS/Linux to confirm the focus-only behavior documented by Spicetify.
    ```ts
    Spicetify.Keyboard.registerShortcut("ctrl+1", async () => {
      await playlistManager.addToPlaylists(currentUri, ["playlist-id"]);
@@ -37,25 +37,25 @@ The extension maps keyboard shortcuts to playlist actions (add current track, op
    });
    ```
 
-2. **Rethink Global Mode Toggle**  
-   - If Spicetify’s API is always global, “global mode off” could mean not registering shortcuts via `Spicetify.Keyboard` and falling back to a focused listener.  
-   - If always-global is acceptable, drop the toggle and simplify settings. Otherwise, conditionally register/deregister shortcuts based on user preference.
+2. **Clarify Focus-Scoped Behavior**  
+   - Document that `Spicetify.Keyboard.registerShortcut` listens via Mousetrap and only fires when the Spotify client is focused.  
+   - Keep an explicit “Spotify focused only” mode that registers shortcuts directly through `Spicetify.Keyboard`.
 
-3. **Remove External Helper (If Tests Pass)**  
-   - Delete helper scripts and SSE logic once confident in the Spicetify approach.  
-   - Update status messaging: instead of “Helper not running,” display whether hotkeys are active or if the platform restricts background capture.
+3. **Streamline External Helper Integration**  
+   - Retain the Python/Node helper for true OS-level global hotkeys; simplify detection and status messaging instead of removing it.  
+   - Improve helper onboarding (diagnostics, clearer errors) so users understand why it is required for background shortcuts (see `docs/experiments/helper-ux-outline.md`).
 
 4. **Prevent Duplicate Triggers**  
    - Mousetrap generally guards against repeats, but confirm behavior.  
    - If needed, keep a lightweight lock (ignore `event.repeat` or use a short timeout) to avoid multi-fire when keys are held.
 
 ### Expected Benefits
-- Major code reduction: no helper orchestration, SSE handling, or dual-mode maintenance.
-- Simpler onboarding: users install extension only; no separate helper process.
-- Improved reliability: fewer moving parts and less chance of helper misconfiguration.
+- Clearer user expectations about focus-limited versus system-wide shortcuts.  
+- Reduced confusion by keeping helper support but tightening its UX.  
+- Opportunity to simplify in-app hotkey code paths while maintaining global capability for power users.
 
 ### Research Notes
-- Spicetify Keyboard is a wrapper around Mousetrap (`Spicetify.Mousetrap`). Confirm whether Spotify’s Electron shell captures keys while unfocused. If not, document limitations and keep helper optional.
+- Spicetify Keyboard is a wrapper around Mousetrap (`Spicetify.Mousetrap`) and only processes shortcuts while Spotify has focus; retaining the helper remains necessary for true OS-level capture (per Oct 2025 docs/community guidance).
 - Track conflict handling: shortcuts are global across extensions, so collisions may occur. Expose customization to avoid clashes.
 
 ---
@@ -65,17 +65,17 @@ The extension maps keyboard shortcuts to playlist actions (add current track, op
 ### Current Approach
 - A large (`~800` lines) imperative modal constructed via DOM manipulation in `src/settings-ui.ts`.
 - Renders a “Playlist Hotkeys” button beside Spotify’s add-to-playlist icon and uses inline styles, manual event binding, and custom playlist search tags.
-- Displays helper status text and toggles (some now outdated once helper is removed).
+- Displays helper status text and toggles, but the copy does not clearly distinguish focused vs. helper-backed modes.
 
 ### Issues
 - Difficult to maintain: monolithic file with mixed rendering, event handling, and state.
-- UI polish: playlist dropdown persists after selection, limited keyboard navigation, and helper references that may become obsolete.
+- UI polish: playlist dropdown persists after selection, limited keyboard navigation, and helper messaging is confusing about connection requirements.
 - DOM selectors are verbose to accommodate Spotify UI variations.
 
 ### Recommendations
 1. **Modularize or Migrate to React/Creator**
    - Split logic into smaller modules (hotkey capture component, playlist search, status display).  
-   - Consider Spicetify Creator + React for JSX components, mirroring community projects like Power Search Bar for maintainability.
+   - Consider Spicetify Creator + React for JSX components, mirroring community projects like Power Search Bar for maintainability (see `docs/experiments/settings-ui-plan.md` for proposed architecture).
 
 2. **Leverage Spicetify UI Components**
    - `Spicetify.PopupModal.display` for modals instead of manual overlays.  
@@ -87,8 +87,8 @@ The extension maps keyboard shortcuts to playlist actions (add current track, op
    - Provide clear feedback when no playlists are available or search yields no results.
 
 4. **Update Copy & Status Indicators**
-   - Remove helper-specific text when deprecated.  
-   - Show simple statuses like “✅ Global hotkeys enabled” / “⚠️ Works only when Spotify focused.”
+   - Explain focused vs. helper-backed global modes directly in the UI.  
+   - Show statuses like “✅ Helper connected (system-wide)” / “⚠️ Works only when Spotify focused.”
 
 5. **Optional: Context Menu Integration**
    - Use `Spicetify.ContextMenu.Item` or `SubMenu` to add “Add to Playlist (Hotkeys)” entries when right-clicking tracks.  
@@ -140,23 +140,23 @@ The extension maps keyboard shortcuts to playlist actions (add current track, op
 ## 5. Refactoring & Maintainability
 
 ### Goals
-- Remove dead helper code once deprecated (SSE listeners, ensureHelper, retry loops).
-- Simplify or eliminate `hotkeys.ts` if Spicetify Keyboard handles everything.
+- Consolidate helper-related code paths while keeping SSE listeners/ensureHelper lightweight and reliable.
+- Simplify `hotkeys.ts` by separating focused (`Spicetify.Keyboard`) handling from helper-driven global handling without duplication.
 - Keep configuration management straightforward (`Spicetify.LocalStorage` is sufficient; update defaults if fields are removed).
 - Refresh comments and README documentation to reflect new behavior.
 - Consider optional new features (playback controls) carefully—could be separate extension or opt-in settings.
 
 ### Suggested Steps
 1. **Hotkey Module Cleanup**
-   - Strip helper references, consolidate registration logic.  
-   - Possibly move everything into `extension.ts` if lightweight enough.
+   - Share combo normalization between focused and helper modes; ensure helper detection/retry logic is self-contained.  
+   - Consider migrating helper communication utilities into a dedicated module consumed by `extension.ts`.
 
 2. **Settings UI Decomposition**
    - Introduce submodules or React components.  
    - Ensure `onConfigChange` flow remains intact, triggering re-registration of shortcuts.
 
 3. **Documentation Updates**
-   - Rewrite README installation (remove Python prerequisite).  
+   - Clarify focused vs. system-wide requirements in README (retain helper prerequisite for global mode).  
    - Add sections for new features (context menu, playback controls if implemented).  
    - Include troubleshooting notes for known limitations (e.g., OS-specific global capture).
 
@@ -192,16 +192,16 @@ The extension maps keyboard shortcuts to playlist actions (add current track, op
 Update statuses as tasks progress.
 
 1. **Hotkey Handling**
-   - [ ] Experiment with `Spicetify.Keyboard.registerShortcut` on all platforms; record results.  
-   - [ ] Decide on helper deprecation or fallback strategy based on tests.  
-   - [ ] Refactor `src/hotkeys.ts` / `extension.ts` to centralize shortcut registration and cleanup helper logic.  
-   - [ ] Update debug messaging and settings UI to reflect new behavior.
+   - [ ] Build/verify minimal `Spicetify.Keyboard.registerShortcut` test and document focus-only behavior per platform.  
+   - [ ] Define and document helper retention strategy, including UX messaging and diagnostics.  
+   - [ ] Refactor `src/hotkeys.ts` / `extension.ts` to centralize shortcut registration while keeping helper integration modular.  
+   - [ ] Update debug messaging and settings UI to explain focused vs. system-wide modes.
 
 2. **Settings UI Modernization**
    - [ ] Outline modular structure or Creator migration plan.  
    - [ ] Implement playlist search improvements and status indicators.  
    - [ ] Integrate Spicetify UI components where practical.  
-   - [ ] Remove helper-specific configs if deprecated.
+   - [ ] Refresh helper-specific configs to surface connection status and requirements clearly.
 
 3. **Playlist Manager Optimization**
    - [ ] Benchmark current duplicate scanning for large playlists.  
@@ -227,9 +227,9 @@ Update statuses as tasks progress.
 Use this section to log experiments. Add dated bullet points as results come in.
 
 ### Keyboard Capture Experiments
-- _Pending_ — Need verification that Mousetrap via Spicetify captures keys when Spotify is unfocused on Windows/macOS/Linux.
-- _Action_ — Build minimal extension snippet registering `ctrl+shift+1`, test in background, record behavior.
-- _Fallback_ — If global capture fails, define helper retention plan (optional toggle, improved messaging, simplified setup guide).
+- 2025-10-24 — Spicetify docs/community threads confirm `Spicetify.Keyboard` (Mousetrap wrapper) only fires while Spotify is focused; helper remains required for OS-level capture.
+- _Action_ — Follow `docs/experiments/focus-shortcut-test.md` to run the `ctrl+shift+9` prototype and document focus-only behavior per OS.
+- _Next_ — Refine helper retention plan (optional toggle, improved messaging, simplified setup guide).
 
 ### UI Reference Notes
 - _To do_ — Audit Song Stats (context menus), Power Search Bar (React + Creator), Seek Song (keyboard handling).  
@@ -263,7 +263,7 @@ Run these checks after substantial changes and document outcomes.
 
 Maintain this list; replace entries with conclusions (include dates) once resolved.
 
-- Can Spicetify Keyboard fully replace the helper across platforms?  
+- 2025-10-24 — Spicetify Keyboard cannot replace the helper for unfocused/global capture; continue supporting helper-backed mode.  
 - Should global hotkeys always be on, or should users retain a toggle?  
 - Is duplicate scanning worth the latency compared to API-only detection?  
 - What UI approach best scales for users with hundreds of playlists (search improvements, virtualization)?  

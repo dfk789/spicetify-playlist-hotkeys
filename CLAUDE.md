@@ -1,0 +1,1 @@
+YOU MUST READ @AGENTS.md
