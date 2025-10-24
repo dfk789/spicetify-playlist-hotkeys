@@ -80,13 +80,86 @@ Untracked:  docs/CHANGELOG.md (new tracking system)
 Untracked:  docs/SESSION_NOTES.md (this file)
 ```
 
+#### 5. Source Code Review ✅
+Comprehensive review of all TypeScript source files:
+
+**extension.ts (213 lines)**:
+- Main entry point with `PlaylistHotkeyExtension` class
+- Manages config (localStorage), hotkey setup, and user feedback
+- Rich notification formatting with emoji indicators (💚 liked, ✅ added, 🔁 already, ❌ failed)
+- Exposes debug functions: `PlaylistHotkeysDebug(true/false)`, `PlaylistHotkeysDebugState()`
+- Clean separation of concerns (delegates to manager classes)
+
+**hotkeys.ts (377 lines)**:
+- `HotkeyManager` handles dual-mode registration:
+  - In-app: keydown listener with combo normalization
+  - Global: SSE connection to helper at `http://127.0.0.1:17976`
+- Combo normalization: `Ctrl+Alt+Shift+Key` canonical format
+- Execution locks prevent double-triggers (500ms timeout)
+- Helper lifecycle: `ensureHelper()` → `startHelperEvents()` → `syncGlobalHelperCombos()`
+- Retry logic with 3s interval when helper offline
+- **Issue**: Dual registration paths create complexity
+
+**playlists.ts (933 lines)**:
+- `PlaylistManager` with sophisticated caching strategy:
+  - Playlist metadata cache (5min TTL)
+  - Track cache per playlist (2min TTL, stores URIs + IDs)
+- Duplicate detection:
+  - Pre-scan playlists to check existence
+  - Handles linked tracks (`linked_from` URIs/IDs)
+  - Parallel fetching with 5 concurrent workers for large playlists
+- Concurrency control: `withTrackLock()` prevents race conditions
+- API endpoints: `sp://core-playlist/v1/rootlist`, fallback to Web API
+- Auto-like feature with liked songs check
+- **Strengths**: Robust error handling, defensive coding
+- **Opportunity**: Pre-scan adds latency, could be optimized
+
+**debug.ts (46 lines)**:
+- Simple `DebugManager` with localStorage persistence
+- Console logging wrappers (log, warn, error)
+
+**settings-ui.ts (800+ lines estimated)**:
+- Large DOM-based modal construction
+- Button injection beside Spotify's add-to-playlist icon
+- Multiple selector strategies to find UI elements
+- **Issue**: Monolithic, hard to maintain (confirmed as per plan)
+
+**Build Setup**:
+- `package.json`: Minimal deps (tsup, TypeScript, @types/node)
+- No React/Creator currently - vanilla TypeScript
+
+### Architecture Assessment
+
+**Strengths**:
+✅ Clean class-based architecture
+✅ Excellent error handling and defensive coding
+✅ Comprehensive caching strategy
+✅ Good separation of concerns
+✅ Debug tooling built-in
+✅ Rich user feedback (notifications with summaries)
+
+**Technical Debt** (aligns with improvement plan):
+⚠️ Dual hotkey logic (in-app + helper) → complexity
+⚠️ No use of `Spicetify.Keyboard.registerShortcut` API
+⚠️ Settings UI is monolithic DOM manipulation
+⚠️ Helper UX unclear (connection status not surfaced well)
+⚠️ Playlist pre-scan adds latency for duplicate checks
+
+**Quick Wins Identified**:
+1. Use `Spicetify.Keyboard.registerShortcut` for focused mode
+2. Extract helper logic to dedicated module
+3. Surface helper status in UI with clear messaging
+4. Consider optimistic add + error handling vs pre-scan
+
 ### Next Actions
-1. Commit all current changes to clean branch
-2. Begin Phase 0: Research & Planning
+1. ✅ Branch cleaned, all docs committed
+2. ✅ Source code review complete
+3. ⏳ Update CHANGELOG with review findings
+4. Ready to begin Phase 0: Research & Planning
    - Option A: Start with focus-only behavior verification
    - Option B: Audit reference extensions first
    - Option C: Benchmark playlist API performance
-3. Keep this file updated after each session
+5. Keep this file updated after each session
 
 ---
 
