@@ -151,15 +151,45 @@ Comprehensive review of all TypeScript source files:
 3. Surface helper status in UI with clear messaging
 4. Consider optimistic add + error handling vs pre-scan
 
+#### 6. Keyboard Test Extension Created ✅
+Built comprehensive test infrastructure (commit: 0570dc3):
+
+**Test Extension** (`src/keyboard-test.ts`):
+- Registers `Ctrl+Shift+9` shortcut via `Spicetify.Keyboard.registerShortcut`
+- Shows notification with trigger count, elapsed time, and focus state
+- Logs detailed event info to console (keys, modifiers, repeat)
+- Tracks focus/blur events
+- Exposes console commands:
+  - `KeyboardTestStatus()` - Check test state
+  - `KeyboardTestCleanup()` - Unregister shortcut
+
+**Build Setup**:
+- `tsup.test.config.ts` - Separate config (unminified for debugging)
+- `npm run build:test` - Builds `dist/keyboard-test.js`
+- Doesn't interfere with main extension build
+
+**Documentation**:
+- `TEST_INSTRUCTIONS.md` - Complete setup guide with platform-specific notes
+- `keyboard-test-results.md` - Structured template for documenting findings
+
+**Test Procedure**:
+1. Build: `npm run build:test` ✅ (3.31 KB output)
+2. Copy to Spicetify extensions folder
+3. Enable: `spicetify config extensions keyboard-test.js`
+4. Test focused mode (should work)
+5. Test unfocused mode (should NOT work) ← Critical test
+6. Document results
+
 ### Next Actions
 1. ✅ Branch cleaned, all docs committed
 2. ✅ Source code review complete
-3. ⏳ Update CHANGELOG with review findings
-4. Ready to begin Phase 0: Research & Planning
-   - Option A: Start with focus-only behavior verification
-   - Option B: Audit reference extensions first
-   - Option C: Benchmark playlist API performance
-5. Keep this file updated after each session
+3. ✅ Keyboard test extension created
+4. ⏳ **USER ACTION REQUIRED**: Run the keyboard test
+   - Follow `docs/experiments/TEST_INSTRUCTIONS.md`
+   - Document results in `docs/experiments/keyboard-test-results.md`
+   - Expected: Focus-only behavior confirms helper requirement
+5. After test results: Continue Phase 0 (Option B or C) or proceed to Phase 1
+6. Keep this file updated after each session
 
 ---
 
