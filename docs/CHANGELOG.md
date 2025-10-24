@@ -19,12 +19,17 @@ This document tracks all changes made during the modernization and improvement p
 - ✅ Branch cleanup complete (commit: eb7f538)
 - ✅ Source code review complete (commit: 78d32c4)
 - ✅ Created Spicetify.Keyboard test extension (commit: 0570dc3)
+- ✅ Analyzed reference extensions for patterns (commit: c562e87)
 
 ### Research Notes
 - **Spicetify.Keyboard**: Focus-only, returns `void` (not unregister fn), must use `_deregisterShortcut(keys)` to unregister
 - **Helper Requirement**: Confirmed necessary for OS-level global hotkeys
 - **CosmosAsync**: Stable, use `sp://core-playlist/v1/rootlist` endpoint
 - **UI Components**: PopupModal stable, Notistack available, some breaking changes in May 2025
+- **Reference Extensions**: Seek Song (Mousetrap patterns), Power Bar (React 17 + Creator), Context Menu API documented
+- **Key Pattern**: Use `Spicetify.Keyboard.registerShortcut()` with input field protection
+- **React Migration**: Must use React 17 patterns (Spotify compatibility), functional components + hooks recommended
+- **Build Tools**: Spicetify Creator recommended for React projects, spcr-settings for configuration UI
 
 ### Source Code Architecture (Review Complete)
 **File Structure**:
@@ -58,10 +63,11 @@ This document tracks all changes made during the modernization and improvement p
 
 ## Implementation Progress Tracker
 
-### Phase 0: Research & Planning (0.5/3 complete)
+### Phase 0: Research & Planning (2.5/4 complete)
 - [x] Create test infrastructure for Spicetify.Keyboard verification
-- [ ] Run tests and document focus-only behavior per platform
-- [ ] Audit reference extensions (Song Stats, Power Search Bar, Seek Song)
+- [ ] USER ACTION: Run tests and document focus-only behavior per platform
+- [x] Audit reference extensions (Seek Song, Power Search Bar, Context Menu API)
+- [x] Document architectural patterns and recommendations (EXTENSION_PATTERNS.md)
 - [ ] Benchmark current playlist API performance with large playlists
 
 ### Phase 1: Hotkey Handling Simplification (0/4 complete)
