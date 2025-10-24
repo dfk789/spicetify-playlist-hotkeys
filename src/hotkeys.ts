@@ -219,4 +219,13 @@ export class HotkeyManager {
   private canUseSpicetifyKeyboard(): boolean {
     return typeof Spicetify?.Keyboard?.registerShortcut === 'function';
   }
+
+  // Public API for settings UI
+
+  /**
+   * Get helper connection instance for status monitoring
+   */
+  getHelperConnection() {
+    return this.helperConnection;
+  }
 }

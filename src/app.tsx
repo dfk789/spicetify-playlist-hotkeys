@@ -1,18 +1,13 @@
+import React from 'react';
 import { HotkeyManager } from './hotkeys';
 import { PlaylistManager } from './playlists';
-import { SettingsUI } from './settings-ui';
+import { SettingsContainer } from './settings/SettingsContainer';
 import { debugManager } from './debug';
+import type { ExtensionConfig } from './types/settings';
 
 interface HotkeyMapping {
   combo: string;
   playlistIds: string[];
-}
-
-interface ExtensionConfig {
-  globalMode: boolean;
-  mappings: HotkeyMapping[];
-  helperScriptPath?: string;
-  helperAutoStart?: boolean;
 }
 
 interface NotificationSummary {
@@ -26,13 +21,12 @@ class PlaylistHotkeyExtension {
   private config: ExtensionConfig;
   private hotkeyManager: HotkeyManager;
   private playlistManager: PlaylistManager;
-  private settingsUI: SettingsUI;
+  private settingsContainer: HTMLDivElement | null = null;
 
   constructor() {
     this.config = this.loadConfig();
     this.hotkeyManager = new HotkeyManager();
     this.playlistManager = new PlaylistManager();
-    this.settingsUI = new SettingsUI(this.config, this.onConfigChange.bind(this), this.hotkeyManager);
 
     this.playlistManager.setDebug(debugManager.isEnabled());
     (window as any).PlaylistHotkeysDebug = (enabled: unknown = true) => {
@@ -47,12 +41,12 @@ class PlaylistHotkeyExtension {
   }
 
   async initialize(): Promise<void> {
-    while (!Spicetify?.showNotification || !Spicetify?.CosmosAsync) {
+    while (!Spicetify?.showNotification || !Spicetify?.CosmosAsync || !Spicetify?.React || !Spicetify?.ReactDOM) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     await this.setupHotkeys();
-    this.settingsUI.initialize();
+    this.renderSettingsUI();
   }
 
 
@@ -183,10 +177,63 @@ class PlaylistHotkeyExtension {
     return message;
   }
 
+  private renderSettingsUI(): void {
+    // Wait for player controls to be available
+    const findPlayerControls = () => {
+      const selectors = [
+        '[data-testid="add-button"]',
+        '[data-testid="player-controls"]',
+        '.player-controls',
+        '[data-testid="now-playing-bar"]',
+      ];
+
+      for (const selector of selectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+          console.log('[PlaylistHotkeys] Found player controls:', selector);
+          return element;
+        }
+      }
+      return null;
+    };
+
+    const tryRender = () => {
+      const playerControls = findPlayerControls();
+      if (!playerControls) {
+        console.log('[PlaylistHotkeys] Player controls not found, retrying...');
+        setTimeout(tryRender, 1000);
+        return;
+      }
+
+      // Create container for React component
+      if (!this.settingsContainer) {
+        this.settingsContainer = document.createElement('div');
+        this.settingsContainer.id = 'playlist-hotkeys-settings-root';
+        playerControls.parentElement?.appendChild(this.settingsContainer);
+      }
+
+      // Render React component
+      const { React, ReactDOM } = Spicetify;
+      ReactDOM.render(
+        React.createElement(SettingsContainer, {
+          config: this.config,
+          onConfigChange: this.onConfigChange.bind(this),
+          playlistManager: this.playlistManager,
+          hotkeyManager: this.hotkeyManager,
+        }),
+        this.settingsContainer
+      );
+
+      console.log('[PlaylistHotkeys] Settings UI rendered');
+    };
+
+    tryRender();
+  }
+
   private onConfigChange(newConfig: ExtensionConfig): void {
     this.config = newConfig;
     this.saveConfig(newConfig);
-    this.setupHotkeys();
+    void this.setupHotkeys();
   }
 
   private loadConfig(): ExtensionConfig {
