@@ -4,17 +4,12 @@ import { PlaylistManager } from './playlists';
 import { SettingsContainer } from './settings/SettingsContainer';
 import { debugManager } from './debug';
 import type { ExtensionConfig } from './types/settings';
+import type { NotificationSummary } from './types/notifications';
+import { notificationService } from './notifications/NotificationService';
 
 interface HotkeyMapping {
   combo: string;
   playlistIds: string[];
-}
-
-interface NotificationSummary {
-  likedStatus: 'added' | 'already-liked' | 'failed';
-  added: string[];
-  already: string[];
-  failed: { name: string; error: string }[];
 }
 
 class PlaylistHotkeyExtension {
@@ -105,8 +100,8 @@ class PlaylistHotkeyExtension {
       };
       debugManager.log('PlaylistHotkeys', 'handleHotkey:notificationSummary', summary);
 
-      const notificationMessage = this.formatPlaylistNotification(summary);
-      Spicetify.showNotification(notificationMessage);
+      // Use NotificationService (Phase 5)
+      notificationService.showPlaylistResult(summary);
     } catch (error) {
       debugManager.log('PlaylistHotkeys', 'handleHotkey:error', error);
       console.error('Failed to add track to playlists:', error);
@@ -115,128 +110,6 @@ class PlaylistHotkeyExtension {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       Spicetify.showNotification(`❌ Failed to add track\n${errorMessage}`, true);
     }
-  }
-
-  /**
-   * Format notification message for playlist operations
-   *
-   * ENHANCED ERROR MESSAGING (Phase 4.4):
-   * - Summary line with success/total counts
-   * - Categorized error types (permission, rate limit, network)
-   * - Detailed error messages for troubleshooting
-   * - Visual hierarchy with emojis and formatting
-   */
-  private formatPlaylistNotification(summary: NotificationSummary): string {
-    const maxDisplayed = 4;
-    const totalPlaylists = summary.added.length + summary.already.length + summary.failed.length;
-    const successCount = summary.added.length + summary.already.length;
-    let message = '';
-
-    // Header with overall summary (Phase 4.4)
-    if (totalPlaylists > 1) {
-      if (summary.failed.length === 0) {
-        message += `✓ Success: ${successCount}/${totalPlaylists} playlists\n`;
-      } else {
-        message += `⚠️ Partial: ${successCount}/${totalPlaylists} playlists succeeded\n`;
-      }
-    }
-
-    // Liked status with emoji
-    if (summary.likedStatus === 'added') {
-      message += '💚 Liked';
-    } else if (summary.likedStatus === 'already-liked') {
-      message += '💚 Already liked';
-    } else {
-      message += '❌ Failed to like';
-    }
-
-    // Main playlist addition summary
-    if (summary.added.length > 0) {
-      message += ` + Added to ${summary.added.length} playlist${summary.added.length === 1 ? '' : 's'}`;
-    } else if (summary.already.length > 0 && summary.failed.length === 0) {
-      message += ` + Already in all ${summary.already.length} playlist${summary.already.length === 1 ? '' : 's'}`;
-    }
-
-    // Show added playlists (most important)
-    if (summary.added.length > 0) {
-      message += '\n\n✅ Added:\n';
-      if (summary.added.length <= maxDisplayed) {
-        message += summary.added.map(name => `• ${name}`).join('\n');
-      } else {
-        const displayed = summary.added.slice(0, maxDisplayed);
-        const remaining = summary.added.length - maxDisplayed;
-        message += displayed.map(name => `• ${name}`).join('\n');
-        message += `\n• and ${remaining} more`;
-      }
-    }
-
-    // Show already present playlists (secondary)
-    if (summary.already.length > 0) {
-      message += '\n\n🔁 Already in:\n';
-      if (summary.already.length <= maxDisplayed) {
-        message += summary.already.map(name => `• ${name}`).join('\n');
-      } else {
-        const displayed = summary.already.slice(0, maxDisplayed);
-        const remaining = summary.already.length - maxDisplayed;
-        message += displayed.map(name => `• ${name}`).join('\n');
-        message += `\n• and ${remaining} more`;
-      }
-    }
-
-    // Show failed playlists with error details (Phase 4.4)
-    if (summary.failed.length > 0) {
-      message += '\n\n❌ Failed:\n';
-
-      // Categorize errors by type for better clarity
-      const permissionErrors: typeof summary.failed = [];
-      const rateLimitErrors: typeof summary.failed = [];
-      const otherErrors: typeof summary.failed = [];
-
-      summary.failed.forEach(entry => {
-        const errorLower = entry.error.toLowerCase();
-        if (errorLower.includes('permission') || errorLower.includes('read-only') || errorLower.includes('403') || errorLower.includes('forbidden')) {
-          permissionErrors.push(entry);
-        } else if (errorLower.includes('rate') || errorLower.includes('429') || errorLower.includes('too many')) {
-          rateLimitErrors.push(entry);
-        } else {
-          otherErrors.push(entry);
-        }
-      });
-
-      let displayedCount = 0;
-
-      // Show permission errors with specific message
-      if (permissionErrors.length > 0 && displayedCount < maxDisplayed) {
-        permissionErrors.slice(0, maxDisplayed - displayedCount).forEach(entry => {
-          message += `• ${entry.name} (read-only)\n`;
-          displayedCount++;
-        });
-      }
-
-      // Show rate limit errors with specific message
-      if (rateLimitErrors.length > 0 && displayedCount < maxDisplayed) {
-        rateLimitErrors.slice(0, maxDisplayed - displayedCount).forEach(entry => {
-          message += `• ${entry.name} (rate limited - try again)\n`;
-          displayedCount++;
-        });
-      }
-
-      // Show other errors with full details
-      if (otherErrors.length > 0 && displayedCount < maxDisplayed) {
-        otherErrors.slice(0, maxDisplayed - displayedCount).forEach(entry => {
-          message += `• ${entry.name}: ${entry.error}\n`;
-          displayedCount++;
-        });
-      }
-
-      // Show remaining count if we couldn't display all
-      const remaining = summary.failed.length - displayedCount;
-      if (remaining > 0) {
-        message += `• and ${remaining} more error${remaining === 1 ? '' : 's'}`;
-      }
-    }
-
-    return message;
   }
 
   private renderSettingsUI(): void {
