@@ -30,6 +30,10 @@ export class PlaylistManager {
   private playlistTrackCacheTTL = 2 * 60 * 1000; // 2 minutes
   private pendingTrackOperations = new Map<string, Promise<void>>();
 
+  // Rate limiting configuration (Phase 4.2)
+  private readonly BATCH_SIZE = 5; // Process 5 playlists per batch
+  private readonly BATCH_DELAY_MS = 150; // Wait 150ms between batches
+
   private debugEnabled = Spicetify.LocalStorage?.get(DEBUG_STORAGE_KEY) === 'true';
   private debug(...args: unknown[]): void {
     if (!this.debugEnabled) {
@@ -43,6 +47,21 @@ export class PlaylistManager {
     console.log('[PlaylistManager] Debug', enabled ? 'enabled' : 'disabled');
   }
 
+  /**
+   * Add a track to multiple playlists with rate limiting
+   *
+   * RATE LIMITING STRATEGY (Phase 4.2):
+   * To prevent Spotify API rate limits (429 errors), we process playlists in batches:
+   * - Default batch size: 5 playlists
+   * - Inter-batch delay: 150ms
+   * - Parallel execution within each batch
+   *
+   * This balances speed with API stability when adding to many playlists.
+   *
+   * @param trackUri - The Spotify track URI to add
+   * @param playlistIds - Array of playlist IDs to add to
+   * @returns Summary of operation results
+   */
   async addToPlaylists(trackUri: string, playlistIds: string[]): Promise<PlaylistAddResult> {
     if (!trackUri || playlistIds.length === 0) {
       throw new Error('Invalid track URI or empty playlist list');
@@ -62,23 +81,39 @@ export class PlaylistManager {
     const likedStatus = await this.addToLikedSongs(trackUri);
     this.debug('addToPlaylists:likedStatus', { trackUri, likedStatus });
 
-    await Promise.all(
-      uniquePlaylistIds.map(async playlistId => {
-        try {
-          const outcome = await this.addToSinglePlaylist(trackUri, playlistId);
-          this.debug('addToPlaylists:playlistOutcome', { playlistId, outcome });
-          if (outcome === 'already-present') {
-            alreadyPresent.push(playlistId);
-          } else {
-            added.push(playlistId);
+    // Split playlists into batches to prevent rate limiting (Phase 4.2)
+    const batches = this.splitIntoBatches(uniquePlaylistIds, this.BATCH_SIZE);
+    this.debug('addToPlaylists:batches', { totalPlaylists: uniquePlaylistIds.length, batchCount: batches.length, batchSize: this.BATCH_SIZE });
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      this.debug('addToPlaylists:processingBatch', { batchIndex: i, batchSize: batch.length });
+
+      // Process playlists in current batch in parallel
+      await Promise.all(
+        batch.map(async playlistId => {
+          try {
+            const outcome = await this.addToSinglePlaylist(trackUri, playlistId);
+            this.debug('addToPlaylists:playlistOutcome', { playlistId, outcome });
+            if (outcome === 'already-present') {
+              alreadyPresent.push(playlistId);
+            } else {
+              added.push(playlistId);
+            }
+          } catch (error: any) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.debug('addToPlaylists:playlistFailed', { playlistId, error: message });
+            failed.push({ playlistId, error: message || 'Unknown error' });
           }
-        } catch (error: any) {
-          const message = error instanceof Error ? error.message : String(error);
-          this.debug('addToPlaylists:playlistFailed', { playlistId, error: message });
-          failed.push({ playlistId, error: message || 'Unknown error' });
-        }
-      })
-    );
+        })
+      );
+
+      // Add delay between batches (except after the last batch)
+      if (i < batches.length - 1) {
+        this.debug('addToPlaylists:batchDelay', { delayMs: this.BATCH_DELAY_MS });
+        await new Promise(resolve => setTimeout(resolve, this.BATCH_DELAY_MS));
+      }
+    }
 
     if (added.length === 0 && alreadyPresent.length === 0 && failed.length === uniquePlaylistIds.length) {
       const errorMessages = failed.map(entry => entry.error).join(', ');
@@ -97,6 +132,34 @@ export class PlaylistManager {
     return summary;
   }
 
+  /**
+   * Add a track to a single playlist with duplicate prevention
+   *
+   * DUPLICATE PREVENTION STRATEGY (Phase 4.1):
+   * We use a PRE-SCAN approach rather than optimistic add because:
+   *
+   * 1. Spotify Web API does NOT prevent duplicates automatically
+   *    - The API silently allows duplicate tracks to be added
+   *    - No built-in "skip_duplicates" parameter exists
+   *    - This is a long-standing limitation (confirmed 2025-10-25)
+   *
+   * 2. Pre-scanning provides superior user experience:
+   *    - Prevents duplicate tracks reliably
+   *    - Handles linked/regional track variants (via getTrackIdCandidates)
+   *    - Informs user when track is already present
+   *
+   * 3. Performance optimization via caching:
+   *    - 2-minute cache with "complete" flag reduces repeated scans
+   *    - Parallel fetching (up to 5 workers) minimizes latency
+   *    - Early exit when track found
+   *
+   * Trade-off: Adds latency for large playlists on first check, but cache
+   * amortizes cost across subsequent operations.
+   *
+   * @param trackUri - The Spotify track URI to add
+   * @param playlistId - The target playlist ID
+   * @returns 'added' if track was added, 'already-present' if duplicate detected
+   */
   private async addToSinglePlaylist(trackUri: string, playlistId: string): Promise<'added' | 'already-present'> {
     return this.withTrackLock(playlistId, trackUri, async () => {
       this.debug('addToSinglePlaylist:start', { playlistId, trackUri });
@@ -119,6 +182,9 @@ export class PlaylistManager {
       } catch (error: any) {
         this.debug('addToSinglePlaylist:error', { playlistId, trackUri, error });
 
+        // NOTE: This error handler is defensive programming.
+        // Spotify API typically does NOT return duplicate errors (it just adds duplicates),
+        // but we handle it in case future API changes introduce such responses.
         if (this.isDuplicateTrackError(error)) {
           this.debug('addToSinglePlaylist:duplicateDetected', { playlistId, trackUri, error });
           await this.addTrackToCache(playlistId, trackUri);
@@ -427,6 +493,22 @@ export class PlaylistManager {
     this.updatePlaylistCacheWithTrack(playlistId, uriSet, idSet, false);
   }
 
+  /**
+   * Scan entire playlist to check if track exists
+   *
+   * PERFORMANCE OPTIMIZATION (Phase 4.1):
+   * - Fetches playlist tracks in pages of 100
+   * - Uses up to 5 parallel workers for concurrent fetching
+   * - Early exit when track found (workers stop immediately)
+   * - Caches results for 2 minutes to prevent repeated scans
+   * - Handles both track URIs and IDs for matching
+   * - Supports linked_from variants (regional/alternative versions)
+   *
+   * @param playlistId - The playlist ID to scan
+   * @param candidateUris - Set of track URIs to match (includes variants)
+   * @param candidateIds - Set of track IDs to match (includes variants)
+   * @returns true if track found, false otherwise
+   */
   private async scanPlaylistForTrack(
     playlistId: string,
     candidateUris: Set<string>,

@@ -58,6 +58,69 @@ This document tracks all changes made during the modernization and improvement p
 
 **See**: `docs/PHASE_2_SUMMARY.md` for details
 
+### Phase 3: Settings UI Modernization — React Migration ✅
+**Date**: 2025-10-24
+**Commits**: 5d709e7, 65b598e, 324a64b, e16fb2e, f584c84
+
+**Changes**:
+- Migrated to Spicetify Creator build system
+- Created 10 modular React components (682 lines total)
+- Implemented 3 custom hooks (useSettings, useHelperStatus, usePlaylists)
+- Built searchable PlaylistSelector with keyboard navigation
+- Created HotkeyCapture component with event handling
+- Removed legacy settings-ui.ts (904 lines → 682 lines, -24% code reduction)
+- React/ReactDOM externalized (provided by Spicetify)
+
+**Architecture**:
+- Functional components + hooks pattern
+- Type-safe interfaces (HotkeyMapping, ExtensionConfig, PlaylistInfo, HelperStatus)
+- SCSS support (inline styles used, modules available)
+- TSX with `jsx: "react-jsx"` configuration
+
+**Build**: 44 KB (React external, not bundled) ✅
+
+**See**: `docs/PHASE_3_SUMMARY.md` for details (425 lines)
+
+### Phase 4: Playlist Manager Optimization ✅
+**Date**: 2025-10-25
+**Commits**: [pending]
+
+**Changes**:
+
+**4.1 - Duplicate Check Strategy Documentation**:
+- Researched Spotify Web API duplicate behavior (confirmed no built-in prevention)
+- Documented pre-scan strategy decision with performance trade-offs
+- Added comprehensive comments to `addToSinglePlaylist()` and `scanPlaylistForTrack()`
+- Validated 2-minute cache with 5-worker parallel fetching approach
+
+**4.2 - Rate Limiting Implementation**:
+- Implemented batch processing (5 playlists per batch)
+- Added 150ms inter-batch delay to prevent 429 errors
+- Utilized existing `splitIntoBatches()` utility
+- Configurable constants: `BATCH_SIZE`, `BATCH_DELAY_MS`
+
+**4.3 - CosmosAsync.sub Research**:
+- Created comprehensive research document (`COSMOS_SUB_RESEARCH.md`, 223 lines)
+- Built experimental test script (`cosmos-sub-test.ts`, 275 lines)
+- Tests 8 potential subscription endpoints (sp://, wg://, hm://)
+- Added `build:cosmos-test` npm script
+- Recommendation: Continue cache-based approach (reliable, tested)
+
+**4.4 - Enhanced Error Messaging**:
+- Added success/total count summary header
+- Categorized errors: permission, rate limit, network
+- Improved notification formatting with visual hierarchy
+- Enhanced catch block messages with error details
+
+**Build**: 44 KB (unchanged) ✅
+
+**Performance Improvements**:
+- Rate limit prevention for 10+ playlist operations
+- Better cache utilization (2min tracks, 5min metadata)
+- Enhanced debug logging for troubleshooting
+
+**See**: `docs/PHASE_4_SUMMARY.md` for details (400+ lines)
+
 ### Research Notes
 - **Spicetify.Keyboard**: Focus-only, returns `void` (not unregister fn), must use `_deregisterShortcut(keys)` to unregister
 - **Helper Requirement**: Confirmed necessary for OS-level global hotkeys
@@ -131,11 +194,11 @@ This document tracks all changes made during the modernization and improvement p
 - [x] Migrate to React with ReactDOM.render()
 - [x] Remove legacy DOM-based settings UI code (904 lines)
 
-### Phase 4: Playlist Manager Optimization (0/4 complete)
-- [ ] Evaluate duplicate check strategy (pre-scan vs optimistic)
-- [ ] Implement rate limiting for batch playlist operations
-- [ ] Research CosmosAsync.sub for real-time playlist updates
-- [ ] Enhance error messaging with user-friendly notifications
+### Phase 4: Playlist Manager Optimization (4/4 complete) ✅ COMPLETE
+- [x] Evaluate duplicate check strategy (pre-scan vs optimistic)
+- [x] Implement rate limiting for batch playlist operations
+- [x] Research CosmosAsync.sub for real-time playlist updates
+- [x] Enhance error messaging with user-friendly notifications
 
 ### Phase 5: Enhanced Notifications (0/2 complete)
 - [ ] Implement Notistack for stacked notifications
