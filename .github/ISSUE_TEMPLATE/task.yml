@@ -7,6 +7,7 @@ Body:
     attributes:
       value: |
         Use this for work that should map to one branch/PR or one evidence-backed operational action.
+        The issue body must be self-contained enough for an agent to start without mining retired local phase plans.
         Read AGENTS.md first. If this issue conflicts with AGENTS.md, AGENTS.md wins unless the task explicitly updates it.
   - type: textarea
     id: objective
@@ -17,14 +18,21 @@ Body:
     validations:
       required: true
   - type: textarea
-    id: source-context
+    id: task-context
     attributes:
-      label: Source context
-      description: Link or list the local docs/sections that define this task.
+      label: Task context
+      description: Summarize the current facts, decisions, constraints, and background needed to work this issue. Do not make retired local implementation/phase plans required reading.
       placeholder: |
-        - AGENTS.md
-        - docs/tracking-migration-inventory.md
-        - docs/CHANGELOG.md#...
+        This issue is the active task record.
+
+        Current facts:
+        - ...
+
+        Relevant constraints:
+        - ...
+
+        Optional provenance:
+        - Migrated from older local planning notes; those notes are historical unless explicitly named as canonical docs.
     validations:
       required: true
   - type: textarea
@@ -58,6 +66,16 @@ Body:
       placeholder: |
         - Do not reset unrelated local changes.
         - No external/public action without owner approval.
+    validations:
+      required: false
+  - type: textarea
+    id: canonical-docs
+    attributes:
+      label: Canonical docs to obey, if any
+      description: Link only evergreen contracts/runbooks that must be obeyed, such as AGENTS.md, README.md, or current API docs. Do not list retired plans as the task definition.
+      placeholder: |
+        - AGENTS.md — repo engineering contract
+        - README.md — current user-facing behavior
     validations:
       required: false
   - type: textarea
