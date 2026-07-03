@@ -1,6 +1,6 @@
 # Agents Guide — Spicetify Playlist Hotkeys
 
-> High-level operating instructions for coding agents working in this repository.  
+> High-level operating instructions for coding agents working in this repository.
 > Keep this file concise and evergreen; move task-specific plans into dedicated documents.
 
 ---
@@ -43,7 +43,8 @@ If issue text conflicts with this file, this file wins unless the issue explicit
 ## Build & Tooling Notes
 
 - Install dependencies with `npm install`.
-- Build the extension via `npm run build` (tsup bundles source to `dist/playlist-hotkeys.js` and performs type checking).
+- Build the extension via `npm run build` (Spicetify Creator builds `src/app.tsx` to `dist/playlist-hotkeys.js`; the `spicetify` CLI must be installed and on `PATH`).
+- The tsup configs are still used for test/benchmark helper extensions, not the primary production build.
 - Debug logging can be toggled inside Spotify’s console with:
   - `PlaylistHotkeysDebug(true | false)`
   - `PlaylistHotkeysDebugState()`
