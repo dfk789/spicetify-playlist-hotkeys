@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Agent workflow
+    url: https://github.com/dfk789/spicetify-playlist-hotkeys/blob/main/AGENTS.md
+    about: Read the repository agent contract before starting work.

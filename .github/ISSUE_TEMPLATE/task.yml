@@ -1,0 +1,87 @@
+name: Task
+Description: Track an actionable implementation, docs, research, or verification task
+Title: "[Task]: "
+Labels: ["agent:ready"]
+Body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for work that should map to one branch/PR or one evidence-backed operational action.
+        Read AGENTS.md first. If this issue conflicts with AGENTS.md, AGENTS.md wins unless the task explicitly updates it.
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: What should this issue accomplish?
+      placeholder: "One or two sentences."
+    validations:
+      required: true
+  - type: textarea
+    id: source-context
+    attributes:
+      label: Source context
+      description: Link or list the local docs/sections that define this task.
+      placeholder: |
+        - AGENTS.md
+        - docs/tracking-migration-inventory.md
+        - docs/CHANGELOG.md#...
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Define what is in scope and out of scope.
+      placeholder: |
+        In scope:
+        - ...
+
+        Out of scope:
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checklist of conditions required to close the issue.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and risk constraints
+      description: Note destructive actions, external effects, secrets, manual testing, or human approval requirements.
+      placeholder: |
+        - Do not reset unrelated local changes.
+        - No external/public action without owner approval.
+    validations:
+      required: false
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification required
+      description: Commands, manual checks, or evidence required before completion.
+      placeholder: |
+        ```bash
+        npm run build
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: completion-evidence
+    attributes:
+      label: Completion evidence required
+      description: What the PR body or closing comment must include.
+      value: |
+        Final PR or closing comment must include:
+        - Commands run
+        - Output summary
+        - Tests added/updated, or why not applicable
+        - Docs updated, or why not applicable
+        - Remaining risks / gaps
+    validations:
+      required: true

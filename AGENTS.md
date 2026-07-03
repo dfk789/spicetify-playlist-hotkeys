@@ -24,6 +24,22 @@
 
 ---
 
+## GitHub Issue Tracking
+
+Active implementation, documentation, research, and verification tasks are tracked in GitHub Issues for this repository.
+Before starting work:
+
+1. Read this `AGENTS.md` first. It remains the engineering contract.
+2. Select or create one GitHub Issue for the atomic task.
+3. Read every local doc linked by the issue before editing files.
+4. Work on a branch named for the issue and task, such as `docs/2-readme-refresh` or `feat/4-context-menu-spike`.
+5. Keep code, tests, docs, and verification evidence together.
+6. Close the issue only through a merged PR or an explicit evidence-backed maintainer close.
+
+If issue text conflicts with this file, this file wins unless the issue explicitly updates this file in the same PR.
+
+---
+
 ## Build & Tooling Notes
 
 - Install dependencies with `npm install`.
