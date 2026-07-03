@@ -10,7 +10,7 @@
 - Confirm the working branch with `git branch --show-current`; create feature branches from `main` using `feat/<slug>`, `fix/<slug>`, or `docs/<slug>`.
 - Run `git status -sb` before and after changes. If unrelated modifications exist, pause and clarify with the user.
 - Skim `README.md` to recall user-facing behavior, build steps, and helper usage.
-- Review recent commits or discussion to understand current focus. Detailed plans live in `docs/`.
+- Review the active GitHub Issue for current task scope. Local docs may provide durable behavior or history, but retired phase/implementation plans are not the task queue.
 
 ---
 
@@ -31,7 +31,7 @@ Before starting work:
 
 1. Read this `AGENTS.md` first. It remains the engineering contract.
 2. Select or create one GitHub Issue for the atomic task.
-3. Read every local doc linked by the issue before editing files.
+3. Read the issue body as the active task definition. Read linked canonical docs only when the issue names them as required contracts or current behavior references; retired phase/implementation plans are historical provenance unless the issue explicitly says otherwise.
 4. Work on a branch named for the issue and task, such as `docs/2-readme-refresh` or `feat/4-context-menu-spike`.
 5. Keep code, tests, docs, and verification evidence together.
 6. Close the issue only through a merged PR or an explicit evidence-backed maintainer close.

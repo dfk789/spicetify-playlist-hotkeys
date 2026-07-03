@@ -6,7 +6,7 @@ Scope: `dfk789/spicetify-playlist-hotkeys`
 
 ## Purpose
 
-This document maps the repo's current markdown-based planning sources to the GitHub Issues workflow. It is intentionally small and practical: use it to avoid losing context while moving active work into issues.
+This document records how the repo moved from markdown-based planning notes to GitHub Issues. It is intentionally historical after the pilot: active task scope should live in GitHub Issues, while local docs remain for durable contracts, user-facing behavior, architecture notes, evidence, and provenance.
 
 ## Repository state at inventory time
 
@@ -26,24 +26,19 @@ Important: several planning sources referenced below exist on `feature/react-mig
 
 - `AGENTS.md` — repo engineering contract and agent workflow rules.
 - `README.md` — user-facing install, usage, helper, and build guidance.
-- `docs/CHANGELOG.md` — implementation progress history and phase status.
-- `docs/SESSION_NOTES.md` — historical session context while this pilot is being migrated.
-- `docs/PHASE_*_SUMMARY.md` — completion evidence and rationale for completed phases.
-- `docs/experiments/*` — research procedures, manual test instructions, and reference notes.
+- Current runbooks, API references, and evidence records when they describe durable behavior rather than future tasks.
 
-### Active work to move into GitHub Issues
+### Active work now lives in GitHub Issues
 
-- Open tasks from `docs/CHANGELOG.md`:
-  - Phase 6 optional features
-  - Documentation & Testing
-  - Marketplace Preparation
-- Remaining/manual verification items from `docs/PHASE_0_SUMMARY.md`, `docs/PHASE_4_SUMMARY.md`, and `docs/improvement-plan.md`.
-- Still-open questions from `docs/improvement-plan.md` section 10 when they require concrete action.
+- GitHub Issues are the active task queue for implementation, documentation, research, and verification work.
+- A migrated issue should be self-contained: objective, task context, scope, acceptance criteria, risk constraints, verification, and completion evidence should be in the issue body.
+- Local phase/implementation files may be mentioned as historical provenance, but should not be required reading for task scope unless the issue explicitly identifies a canonical current doc.
 
 ### Historical or superseded planning
 
-- `docs/PHASE_3_PLAN.md` is mostly historical because `docs/CHANGELOG.md` now reports Phase 3 complete. Keep it as implementation rationale, not as the active queue.
-- `docs/improvement-plan.md` contains older unchecked roadmap boxes. Treat it as source context, but cross-check with `docs/CHANGELOG.md` and phase summaries before creating issues.
+- `docs/CHANGELOG.md`, `docs/SESSION_NOTES.md`, `docs/PHASE_*_SUMMARY.md`, `docs/PHASE_3_PLAN.md`, and `docs/improvement-plan.md` are retained as history/rationale where present on a branch.
+- Older unchecked roadmap boxes must be reconciled into GitHub Issues before agents treat them as active work.
+- Do not create new work by editing retired phase-plan checklists; create or update GitHub Issues instead.
 
 ## Candidate milestones
 
@@ -87,15 +82,17 @@ For this repo, add these repo-specific labels if/when they become useful:
 
 ## Required issue body conventions
 
-Each migrated issue should include:
+Each migrated issue should be self-contained and include:
 
 - Objective
-- Source context with file links/paths
+- Task context summarizing the current facts and decisions needed to work
 - Scope and out-of-scope notes
 - Acceptance criteria
 - Safety/risk constraints
+- Canonical docs to obey, if any; do not list retired phase plans as the task definition
 - Verification required
 - Completion evidence required
+- Optional historical provenance noting where the task came from
 
 For manual verification tasks, evidence should include OS, Spotify/Spicetify version where available, commands/scripts used, observed behavior, and whether any docs were updated.
 
@@ -105,7 +102,8 @@ Add a concise GitHub Issue Tracking section while preserving existing repo rules
 
 - GitHub Issues are the active task queue after migration.
 - `AGENTS.md` remains the engineering contract.
-- Issue-linked local docs must be read before editing.
+- Issue bodies are the active task definitions.
+- Linked local docs should be read only when they are current canonical contracts/references; retired phase or implementation plans are historical provenance unless explicitly marked otherwise.
 - One issue should map to one branch/PR where practical.
 - Issues close only via merged PR or explicit evidence-backed close.
 
