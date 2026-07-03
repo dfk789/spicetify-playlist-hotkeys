@@ -1,0 +1,72 @@
+name: Bug report
+Description: Report a reproducible defect or regression
+Title: "[Bug]: "
+Labels: ["type:bug", "status:needs-evidence"]
+Body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for defects. Include enough evidence that an agent can reproduce or safely investigate.
+        Read AGENTS.md first. Do not include secrets, private account data, or raw tokens.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Give exact steps, commands, or UI actions.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Spotify/Spicetify version, extension version/branch, and helper mode if relevant.
+      placeholder: |
+        - OS:
+        - Spotify:
+        - Spicetify:
+        - Branch/commit:
+        - Helper mode:
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste only redacted logs. Never paste secrets or private tokens.
+    validations:
+      required: false
+  - type: textarea
+    id: verification
+    attributes:
+      label: Fix verification required
+      value: |
+        A fixing PR or closing comment must include:
+        - Reproduction evidence or explanation why reproduction was not possible
+        - Commands/manual checks run
+        - Output/behavior summary
+        - Regression test or reason a test is not practical
+    validations:
+      required: true
