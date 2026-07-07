@@ -51,5 +51,5 @@ Based on Spicetify documentation (Oct 2025), `Spicetify.Keyboard` wraps Mousetr
 
 ## Next Actions
 
-- Capture platform-specific notes in `docs/improvement-plan.md` once testing is performed.  
+- Capture platform-specific notes in a GitHub Issue comment or durable doc once testing is performed.
 - Update helper UX plans if a platform unexpectedly supports background capture without the helper.

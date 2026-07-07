@@ -512,23 +512,21 @@ spicetify-playlist-hotkeys/
 
 ## Research Gaps & Next Steps
 
-### Completed ✅
-- [x] Seek Song keyboard patterns
-- [x] Power Bar React architecture
-- [x] Power Bar keyboard handling
-- [x] Power Bar Spicetify Creator setup
+### Completed
+- Seek Song keyboard patterns
+- Power Bar React architecture
+- Power Bar keyboard handling
+- Power Bar Spicetify Creator setup
 
-### Incomplete ⚠️
-- [ ] Song Stats context menu patterns
-- [ ] Song Stats modal UI implementation
-- [ ] Detailed spcr-settings API usage
-- [ ] PopupModal vs custom modal comparison
+### Not yet researched (not blocking)
+- Song Stats context menu patterns and modal UI implementation
+- Detailed spcr-settings API usage
+- PopupModal vs custom modal comparison
+- Power Bar suggestion algorithm and category navigation
+- Seek Song player control patterns
+- Platform-specific keyboard behavior
 
-### Optional Deep Dives
-- [ ] Power Bar suggestion algorithm
-- [ ] Power Bar category navigation
-- [ ] Seek Song player control patterns
-- [ ] Platform-specific keyboard behavior
+These items are not blocking. Context menu and playback control exploration are tracked in GitHub Issues #4 and #5.
 
 ---
 

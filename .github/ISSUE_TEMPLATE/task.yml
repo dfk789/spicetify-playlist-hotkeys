@@ -17,14 +17,14 @@ Body:
     validations:
       required: true
   - type: textarea
-    id: source-context
+    id: task-context
     attributes:
-      label: Source context
-      description: Link or list the local docs/sections that define this task.
+      label: Task context
+      description: Provide background, related issues, or canonical docs to obey. Do not point at retired local tracker docs.
       placeholder: |
         - AGENTS.md
-        - docs/tracking-migration-inventory.md
-        - docs/CHANGELOG.md#...
+        - Related issue: #NN
+        - Canonical doc: docs/...
     validations:
       required: true
   - type: textarea

@@ -118,7 +118,7 @@ KeyboardTestCleanup()
 
 ### Test Results Template
 
-Copy this template to `docs/experiments/keyboard-test-results.md`:
+Use this template to record results in a GitHub Issue comment or a new results file:
 
 ```markdown
 # Keyboard Test Results
@@ -215,7 +215,7 @@ rm "$EXT_PATH/keyboard-test.js"
 After documenting results:
 
 1. Update `docs/experiments/focus-shortcut-test.md` with findings
-2. Update `docs/improvement-plan.md` Section 8 (Research Tracker)
+2. Document findings in a GitHub Issue comment or durable doc
 3. If focus-only confirmed: Proceed with Phase 1 refactor
 4. If OS-level capture detected: Revise strategy (unlikely but document if occurs)
 

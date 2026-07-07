@@ -67,10 +67,10 @@ These are **unverified** endpoints to test:
 
 ## Research Plan
 
-### Phase 1: Endpoint Discovery ✓
-- [x] Review Spicetify documentation
-- [x] Search community forums/Discord for known subscription endpoints
-- [x] Analyze existing extensions using CosmosAsync.sub
+### Phase 1: Endpoint Discovery (completed)
+- Reviewed Spicetify documentation
+- Searched community forums/Discord for known subscription endpoints
+- Analyzed existing extensions using CosmosAsync.sub
 
 **Finding**: No documented playlist subscription endpoints found. Must experiment.
 

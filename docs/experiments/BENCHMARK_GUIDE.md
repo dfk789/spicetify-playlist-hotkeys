@@ -377,7 +377,7 @@ Based on research and typical Spicetify extension performance:
 1. Document results in `benchmark-results.md`
 2. Identify optimization opportunities
 3. Compare against Phase 4 optimization goals
-4. Update `improvement-plan.md` with findings
+4. Document findings in a GitHub Issue comment or durable doc
 5. Prioritize Phase 4 tasks based on bottlenecks
 
 ---
