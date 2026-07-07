@@ -64,7 +64,7 @@ KeyboardTestStatus()
 
 ### Step 6: Document Results
 
-Open `docs/experiments/keyboard-test-results.md` and fill in:
+Document your results in a GitHub Issue comment or a new results file. Include:
 - ✅ or ❌ for each test
 - What you observed
 - Any issues
@@ -126,7 +126,7 @@ After testing, let me know:
 ## Next Steps After Testing
 
 **If test passes** (focus-only confirmed):
-- Update `improvement-plan.md` with findings
+- Document findings in a GitHub Issue comment or durable doc
 - Proceed to Phase 1: Hotkey Handling Simplification
 - Start implementing `Spicetify.Keyboard.registerShortcut`
 

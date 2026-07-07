@@ -10,7 +10,7 @@
 - Confirm the working branch with `git branch --show-current`; create feature branches from `main` using `feat/<slug>`, `fix/<slug>`, or `docs/<slug>`.
 - Run `git status -sb` before and after changes. If unrelated modifications exist, pause and clarify with the user.
 - Skim `README.md` to recall user-facing behavior, build steps, and helper usage.
-- Review recent commits or discussion to understand current focus. Detailed plans live in `docs/`.
+- Review the active GitHub Issue for current task scope. Durable design/research docs may live in `docs/`, but retired phase/implementation plans are not the task queue.
 
 ---
 
@@ -31,7 +31,7 @@ Before starting work:
 
 1. Read this `AGENTS.md` first. It remains the engineering contract.
 2. Select or create one GitHub Issue for the atomic task.
-3. Read every local doc linked by the issue before editing files.
+3. Read the issue body as the active task definition. Read linked canonical docs only when the issue names them as required contracts or current behavior references.
 4. Work on a branch named for the issue and task, such as `docs/2-readme-refresh` or `feat/4-context-menu-spike`.
 5. Keep code, tests, docs, and verification evidence together.
 6. Close the issue only through a merged PR or an explicit evidence-backed maintainer close.
@@ -64,7 +64,16 @@ Add new scripts or tools only when necessary and document them in the appropriat
 ## Reference Documents
 
 - `README.md` — installation, usage, helper instructions, demo.
-- `docs/improvement-plan.md` — active missions, research tasks, and detailed design goals.
+- `docs/CHANGELOG.md` — release history (not an active task tracker).
+- `docs/COSMOS_SUB_RESEARCH.md` — CosmosAsync subscription API research findings.
+- `docs/experiments/` — durable research procedures, test guides, and architecture notes:
+  - `BENCHMARK_GUIDE.md` — playlist API performance benchmarking guide.
+  - `EXTENSION_PATTERNS.md` — reference extension pattern analysis.
+  - `QUICK_TEST_GUIDE.md` — quick keyboard test guide.
+  - `TEST_INSTRUCTIONS.md` — full keyboard focus test instructions.
+  - `focus-shortcut-test.md` — focus-mode shortcut prototype plan.
+  - `helper-ux-outline.md` — helper UX improvement strategy.
+  - `settings-ui-plan.md` — React settings UI architecture (completed).
 - Additional reference files: `react_components.html`, `playlistmenu_section.txt` (offline documentation).
 
-Keep AGENTS.md focused on these global instructions. Update `docs/improvement-plan.md` (or other docs under `docs/`) with project-specific strategies, to-do lists, or research findings.
+Active development work lives in GitHub Issues, not in local docs. Durable design/research docs may live in `docs/` but must not be treated as task trackers.
