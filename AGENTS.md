@@ -63,7 +63,6 @@ Add new scripts or tools only when necessary and document them in the appropriat
 ## Reference Documents
 
 - `README.md` — installation, usage, helper instructions, demo.
-- `docs/improvement-plan.md` — active missions, research tasks, and detailed design goals.
-- Additional reference files: `react_components.html`, `playlistmenu_section.txt` (offline documentation).
+- Additional reference files: `react_components.html`, `playlistmenu_section.txt` (offline documentation, may exist on feature branches).
 
-Keep AGENTS.md focused on these global instructions. Update `docs/improvement-plan.md` (or other docs under `docs/`) with project-specific strategies, to-do lists, or research findings.
+Active development work lives in GitHub Issues, not in local docs. Durable design/research docs may live in `docs/` on feature branches but must not be treated as task trackers. When a feature branch is merged, its durable docs become reference material; its tracker docs (phase plans, improvement plans, session notes, checklists) must be deleted before or during merge.
